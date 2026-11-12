@@ -1,0 +1,14 @@
+[
+  {
+    "name": "MainActivity",
+    "value": "android:configChanges=\"orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout|uiMode\""
+  },
+  {
+    "name": "MainActivity",
+    "value": "android:hardwareAccelerated=\"true\""
+  },
+  {
+    "name": "MainActivity",
+    "value": "android:windowSoftInputMode=\"adjustResize|stateHidden\""
+  }
+]

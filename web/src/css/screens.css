@@ -1,0 +1,196 @@
+/* O Músico — estilos específicos das telas */
+
+/* início */
+.hello{padding:10px 0 14px}
+.hello h1{font-size:25px;letter-spacing:-.02em}
+.hello p{color:var(--tx2);font-size:14px;margin-top:2px}
+.brand{display:flex;align-items:center;gap:10px;padding:0 10px;flex:1}
+.brand .logo{width:30px;height:30px;border-radius:9px;background:var(--acc);color:var(--acc-ink);display:grid;place-items:center}
+.brand .logo svg{width:19px;height:19px}
+.brand b{font-size:18px;font-weight:750;letter-spacing:-.02em}
+
+/* visualizador de cifra */
+.song-head{padding:4px 0 12px}
+.song-head h2{font-size:22px;letter-spacing:-.02em;line-height:1.2}
+.song-head .by{color:var(--tx2);font-size:14.5px;margin-top:2px}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.meta .badge{height:26px}
+.tbar{display:flex;align-items:center;gap:6px;overflow-x:auto;padding:8px 12px;border-bottom:1px solid var(--line);flex:none;scrollbar-width:none;background:var(--bg)}
+.tbar::-webkit-scrollbar{display:none}
+.tbar .grp{display:flex;align-items:center;gap:2px;background:var(--s2);border-radius:11px;padding:2px;flex:none}
+.tbar .grp b{min-width:34px;text-align:center;font-size:14px;color:var(--chord)}
+.tbar .grp .ibtn{width:34px;height:34px}
+.tbar .grp .ibtn svg{width:18px;height:18px}
+.tbar .tb{flex:none;height:38px;padding:0 11px;border-radius:11px;background:var(--s2);display:flex;align-items:center;gap:6px;font-size:13px;font-weight:650;color:var(--tx2)}
+.tbar .tb svg{width:18px;height:18px}
+.tbar .tb.on{background:var(--acc-soft);color:var(--acc)}
+.chordstrip{display:flex;gap:14px;overflow-x:auto;padding:12px 16px;margin:0 -16px 6px;scrollbar-width:none}
+.chordstrip::-webkit-scrollbar{display:none}
+.chordstrip .cdiag{flex:none}
+.sheetmusic{font-size:var(--fs,16px);line-height:1.3}
+.sl{display:flex;flex-wrap:wrap;align-items:flex-end;min-height:1.4em;margin:0 0 .35em}
+.sl.lyriconly{margin-bottom:.2em}
+.seg-c{display:inline-flex;flex-direction:column;white-space:pre}
+.seg-c .c{color:var(--chord);font-weight:750;font-size:.94em;min-height:1.3em;padding-right:.45em;cursor:pointer;border-radius:4px;transition:background .15s,color .15s}
+.seg-c .c:empty{cursor:default}
+.seg-c .c.cur{background:var(--acc);color:var(--acc-ink);padding:0 .3em;margin-left:-.3em}
+.seg-c .l{min-height:1.3em}
+.sl.chordonly .seg-c .l{display:none}
+.sl.blank{min-height:.8em}
+.sl.cmt{color:var(--tx2);font-weight:700;font-size:.85em;text-transform:uppercase;letter-spacing:.05em;margin:1.1em 0 .4em}
+.chorus{border-left:3px solid var(--acc);padding-left:12px;margin:.4em 0 .8em}
+.tabblock{font-family:var(--mono);font-size:calc(var(--fs,16px)*.78);line-height:1.35;white-space:pre;overflow-x:auto;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:.6em 0 1em}
+.songnotes{margin-top:18px}
+.present{background:#000!important}
+.present .topbar,.present .tbar{display:none}
+.present .content{padding-top:calc(16px + var(--safeT))}
+.present .sheetmusic{--fs:24px}
+.present .song-head .meta,.present .chordstrip,.present .songextra{display:none}
+.presbar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:10px;padding:12px 12px calc(12px + var(--safeB));
+  background:linear-gradient(transparent,rgba(0,0,0,.85) 40%);opacity:0;transition:opacity .25s;pointer-events:none;z-index:5}
+.presbar.show{opacity:1;pointer-events:auto}
+.presbar .btn{background:rgba(255,255,255,.12);color:#fff}
+.scrollctl{position:absolute;right:14px;bottom:calc(16px + var(--safeB));z-index:6;display:flex;align-items:center;gap:6px;padding:6px;border-radius:999px;background:var(--s3);border:1px solid var(--line2);box-shadow:0 8px 24px rgba(0,0,0,.35)}
+.scrollctl b{min-width:30px;text-align:center;font-size:13px}
+.scrollctl .ibtn{width:38px;height:38px}
+.practicebar{position:absolute;left:10px;right:10px;bottom:calc(12px + var(--safeB));z-index:6;display:flex;flex-direction:column;gap:4px;padding:10px 8px 8px 14px;border-radius:18px;background:var(--s3);border:1px solid var(--line2);box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.practicebar .prow{display:flex;align-items:center;gap:6px}
+.practicebar .pc{flex:1;min-width:0}
+.practicebar .pc b{font-size:24px;color:var(--chord);font-weight:800;margin-right:10px}
+.practicebar .pc small{font-size:12.5px;color:var(--tx2)}
+.practicebar small.dim{font-size:11.5px;font-weight:600}
+.practicebar .stepper button{width:34px;height:34px}
+.practicebar .stepper b{min-width:32px}
+.beats{display:flex;gap:4px;margin-top:3px}
+.beats i{width:8px;height:8px;border-radius:50%;background:var(--s4)}
+.beats i.on{background:var(--acc)}
+
+/* afinador */
+.tuner{display:flex;flex-direction:column;align-items:center;padding-top:8px}
+.tn-note{font-size:88px;font-weight:800;line-height:1;letter-spacing:-.04em;display:flex;align-items:flex-start;transition:color .2s;min-height:90px}
+.tn-note sup{font-size:34px;margin-top:8px;font-weight:700}
+.tn-note sub{font-size:24px;align-self:flex-end;color:var(--tx3);margin-bottom:10px;font-weight:600}
+.tn-note.ok{color:var(--ok)}
+.tn-hz{font-size:15px;color:var(--tx2);margin-top:6px;min-height:22px}
+.tn-gauge{width:100%;max-width:420px;margin:10px auto 0}
+.tn-gauge .tick{stroke:var(--tx3)}
+.tn-gauge .tick.big{stroke:var(--tx2)}
+.tn-gauge .zone{fill:var(--ok-soft)}
+.tn-gauge .needle{stroke:var(--tx);stroke-width:3;stroke-linecap:round;transition:transform .09s linear}
+.tn-gauge .needle.ok{stroke:var(--ok)}
+.tn-gauge .hub{fill:var(--tx)}
+.tn-gauge text{fill:var(--tx3);font-size:11px;font-weight:600;text-anchor:middle}
+.tn-cents{font-size:16px;font-weight:700;margin-top:2px;min-height:24px}
+.tn-dir{display:flex;gap:18px;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--tx3);margin-top:4px}
+.tn-dir .on{color:var(--warn)}
+.tn-level{width:160px;height:4px;border-radius:2px;background:var(--s3);overflow:hidden;margin-top:12px}
+.tn-level i{display:block;height:100%;background:var(--tx3);width:0;transition:width .08s}
+.strings{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:20px}
+.strbtn{min-width:52px;height:60px;padding:0 6px;border-radius:14px;background:var(--s2);border:1.5px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;transition:all .15s}
+.strbtn b{font-size:18px;font-weight:750}
+.strbtn small{font-size:10.5px;color:var(--tx3);font-weight:600}
+.strbtn.cur{border-color:var(--acc);background:var(--acc-soft)}
+.strbtn.done{border-color:var(--ok)}
+.strbtn.done b{color:var(--ok)}
+.strbtn.sel{box-shadow:0 0 0 2px var(--tx)}
+
+/* metrônomo */
+.met{display:flex;flex-direction:column;align-items:center}
+.met-bpm{font-size:84px;font-weight:800;letter-spacing:-.04em;line-height:1;font-variant-numeric:tabular-nums}
+.met-it{color:var(--tx2);font-weight:600;font-size:14px;margin-top:4px}
+.met-beats{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:22px 0 6px}
+.met-beats button{width:40px;height:40px;border-radius:50%;background:var(--s3);border:2px solid transparent;position:relative;transition:transform .06s,background .06s}
+.met-beats button[data-a="2"]{border-color:var(--acc)}
+.met-beats button[data-a="0"]{opacity:.35;background:transparent;border:2px dashed var(--s4)}
+.met-beats button.on{background:var(--tx);transform:scale(1.12)}
+.met-beats button.on[data-a="2"]{background:var(--acc)}
+.met-pulse{width:100%;height:6px;border-radius:3px;background:var(--s2);overflow:hidden;margin:6px 0 4px}
+.met-pulse i{display:block;height:100%;width:100%;background:var(--acc);opacity:0;transition:opacity .25s ease-out}
+.met-pulse i.hit{opacity:1;transition:none}
+.flash{position:absolute;inset:0;pointer-events:none;background:var(--acc);opacity:0;z-index:4;transition:opacity .22s ease-out}
+.flash.hit{opacity:.13;transition:none}
+.bigplay{width:84px;height:84px;border-radius:50%;background:var(--acc);color:var(--acc-ink);display:grid;place-items:center;box-shadow:0 10px 30px color-mix(in srgb,var(--acc) 35%,transparent);transition:transform .1s}
+.bigplay svg{width:36px;height:36px}
+.bigplay:active{transform:scale(.95)}
+.met-row{display:flex;align-items:center;justify-content:center;gap:18px;margin:16px 0}
+.roundbtn{width:56px;height:56px;border-radius:50%;background:var(--s3);display:grid;place-items:center;font-weight:750}
+.roundbtn svg{width:22px;height:22px}
+.tapbtn{width:100%;height:64px;border-radius:16px;background:var(--s2);border:1px dashed var(--line2);font-weight:750;font-size:16px;color:var(--tx2)}
+.tapbtn:active{background:var(--acc-soft);color:var(--acc)}
+
+/* identificador / gravador */
+.roll{width:100%;height:150px;background:var(--s1);border:1px solid var(--line);border-radius:14px}
+.wave{width:100%;height:90px;background:var(--s1);border:1px solid var(--line);border-radius:14px}
+.rectime{font-size:46px;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;letter-spacing:-.02em;margin:14px 0 4px}
+.recbtn{width:78px;height:78px;border-radius:50%;background:var(--bad);display:grid;place-items:center;margin:8px auto;box-shadow:0 0 0 6px var(--bad-soft)}
+.recbtn i{width:28px;height:28px;border-radius:50%;background:#fff;transition:all .2s}
+.recbtn.on i{border-radius:6px;width:26px;height:26px}
+audio{width:100%;height:40px;margin-top:8px}
+
+/* aprendizagem / quiz */
+.qhead{display:flex;align-items:center;gap:12px;margin:6px 0 14px}
+.qhead .prog{flex:1}
+.qcard{background:var(--s1);border:1px solid var(--line);border-radius:var(--r3);padding:18px;text-align:center;min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.qcard .big{font-size:44px;font-weight:800;letter-spacing:-.02em}
+.qcard .ask{color:var(--tx2);font-size:14px;font-weight:600}
+.qopts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.qopts.three{grid-template-columns:repeat(3,1fr)}
+.qopts.four{grid-template-columns:repeat(4,1fr)}
+.qopt{min-height:56px;border-radius:14px;background:var(--s2);border:1.5px solid var(--line);font-weight:700;font-size:16px;padding:6px;transition:all .15s;display:flex;align-items:center;justify-content:center}
+.qopt:active{transform:scale(.97)}
+.qopt.ok{border-color:var(--ok);background:var(--ok-soft);color:var(--ok)}
+.qopt.bad{border-color:var(--bad);background:var(--bad-soft);color:var(--bad)}
+.qopt .cdiag .cn{display:none}
+.result{text-align:center;padding:20px 0}
+.result .score{font-size:64px;font-weight:800;letter-spacing:-.03em}
+.lvls{display:flex;gap:6px;flex-wrap:wrap}
+.lvl{height:32px;min-width:44px;padding:0 10px;border-radius:9px;background:var(--s3);font-weight:700;font-size:13px;color:var(--tx2);display:inline-flex;align-items:center;justify-content:center;gap:4px}
+.lvl.on{background:var(--acc);color:var(--acc-ink)}
+.lvl.lock{opacity:.4}
+.lvl svg{width:13px;height:13px}
+.tapzone{width:100%;height:180px;border-radius:var(--r3);background:var(--s2);border:2px dashed var(--line2);display:grid;place-items:center;font-weight:750;font-size:18px;color:var(--tx2);margin-top:14px}
+.tapzone:active{background:var(--acc-soft)}
+.offsets{display:flex;align-items:center;gap:3px;height:60px;padding:0 4px;border-radius:12px;background:var(--s1);margin-top:12px;position:relative;overflow:hidden}
+.offsets::before{content:"";position:absolute;left:0;right:0;top:50%;border-top:1px dashed var(--line2)}
+.offsets i{flex:1;max-width:12px;border-radius:2px;background:var(--acc);position:relative}
+
+/* acordes e escalas */
+.notes-row{display:flex;gap:6px;flex-wrap:wrap}
+.notepill{min-width:42px;height:42px;padding:0 8px;border-radius:12px;background:var(--s2);border:1px solid var(--line);display:inline-flex;flex-direction:column;align-items:center;justify-content:center;font-weight:750;font-size:15px}
+.notepill small{font-size:10px;color:var(--tx3);font-weight:650}
+.notepill.rt{background:var(--acc-soft);border-color:var(--acc);color:var(--acc)}
+.voicings{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
+.voicings .vc{background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:10px 4px 8px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.voicings .vc small{font-size:11px;color:var(--tx3);font-weight:600}
+.keyrow{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.keyrow button{height:40px;border-radius:10px;background:var(--s2);font-weight:700;font-size:14px;border:1px solid var(--line)}
+.keyrow button.on{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
+.harm{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
+.harm button{background:var(--s2);border:1px solid var(--line);border-radius:12px;padding:8px 4px;text-align:center}
+.harm b{display:block;color:var(--chord);font-size:16px}
+.harm small{color:var(--tx3);font-size:11px;font-weight:700}
+.out{font-family:var(--mono);white-space:pre-wrap;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px;min-height:60px;user-select:text;-webkit-user-select:text}
+
+/* grooves */
+.seqgrid{display:grid;gap:4px;margin-top:10px}
+.seqrow{display:grid;grid-template-columns:62px 1fr;gap:6px;align-items:center}
+.seqrow>span{font-size:12px;font-weight:700;color:var(--tx2)}
+.seqsteps{display:grid;gap:3px}
+.seqsteps button{height:30px;border-radius:5px;background:var(--s2);border:1px solid var(--line)}
+.seqsteps button.q{background:var(--s3)}
+.seqsteps button.on{background:var(--acc);border-color:var(--acc)}
+.seqsteps button.play{outline:2px solid var(--tx);outline-offset:-2px}
+
+/* dicionário */
+.dict dt{font-weight:700;margin-top:14px}
+.dict dd{margin:2px 0 0;color:var(--tx2);font-size:14px}
+
+/* perfil */
+.avatar{width:64px;height:64px;border-radius:20px;background:var(--acc-soft);color:var(--acc);display:grid;place-items:center;font-size:26px;font-weight:800}
+.streak{display:flex;gap:4px;margin-top:10px}
+.streak i{flex:1;height:26px;border-radius:5px;background:var(--s3)}
+.streak i.l1{background:color-mix(in srgb,var(--acc) 35%,var(--s3))}
+.streak i.l2{background:color-mix(in srgb,var(--acc) 65%,var(--s3))}
+.streak i.l3{background:var(--acc)}
+.tn-dir span{display:inline-flex;align-items:center;gap:2px}
+.tn-dir svg{width:16px;height:16px}
