@@ -5,7 +5,7 @@
 
   OM.screen("cifras", function () {
     var content = h("div.content");
-    var bar = ui.topbar({ title: "Cifras", actions: [ui.ibtn("upload", importFile, "Importar arquivo"), ui.ibtn("plus", function () { OM.router.push("editor", {}); }, "Nova cifra")] });
+    var bar = ui.topbar({ title: "Cifras", actions: [ui.ibtn("upload", importMenu, "Importar"), ui.ibtn("plus", function () { OM.router.push("editor", {}); }, "Nova cifra")] });
     var el = h("section", bar, content);
     ui.scrollShadow(content, bar);
     var input = h("input", { type: "search", placeholder: "Música, artista, gênero ou trecho da letra", enterkeyhint: "search" });
@@ -54,6 +54,13 @@
           end: h("span", ui.diff(s.difficulty || 2)), onClick: function () { OM.router.push("song", { id: s.id }); } }));
       });
       listEl.appendChild(list);
+    }
+    function importMenu() {
+      ui.menu("Importar músicas", [
+        { icon: "upload", label: "Arquivo JSON (uma ou várias músicas)", sub: "Também aceita JSON gerado por IA", onClick: function () { OM.router.push("transfer"); } },
+        { icon: "notes", label: "Arquivo de texto / ChordPro", sub: "Abre no editor", onClick: importFile },
+        { icon: "share", label: "Guia JSON para IA", sub: "Exporte e peça para uma IA criar cifras", onClick: function () { OM.router.push("transfer"); } }
+      ]);
     }
     function importFile() {
       var f = h("input", { type: "file", accept: ".txt,.cho,.chordpro,.chopro,.pro,.crd,text/plain" });

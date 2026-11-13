@@ -246,12 +246,12 @@
     whites.forEach(function (m) {
       var on = hl.indexOf(m) >= 0, rt = on && o.roots && o.roots.indexOf(T.mod12(m)) >= 0;
       s.push('<rect data-m="' + m + '" class="wk' + (on ? " hl" : "") + (rt ? " rt" : "") + '" x="' + xOf[m] + '" y="0" width="' + ww + '" height="' + wh + '" rx="1.5"/>');
-      if (o.labels && (on || T.mod12(m) === 0)) s.push('<text class="kl" x="' + (xOf[m] + ww / 2) + '" y="' + (wh - 5) + '">' + T.display(T.name(m, o.flats)) + (T.mod12(m) === 0 && !on ? (Math.floor(m / 12) - 1) : "") + "</text>");
+      if (o.labels && (on || T.mod12(m) === 0 || o.labelsAll)) s.push('<text class="kl" x="' + (xOf[m] + ww / 2) + '" y="' + (wh - 5) + '">' + T.display(T.name(m, o.flats)) + (T.mod12(m) === 0 && !on ? (Math.floor(m / 12) - 1) : "") + "</text>");
     });
     blacks.forEach(function (m) {
       var x = xOf[m - 1] + ww - bw / 2, on = hl.indexOf(m) >= 0;
       s.push('<rect data-m="' + m + '" class="bk' + (on ? " hl" : "") + '" x="' + x + '" y="0" width="' + bw + '" height="' + bh + '" rx="1.2"/>');
-      if (o.labels && on) s.push('<text class="kl b" x="' + (x + bw / 2) + '" y="' + (bh - 5) + '" style="font-size:6px">' + T.display(T.name(m, o.flats)) + "</text>");
+      if (o.labels && (on || o.labelsAll)) s.push('<text class="kl b" x="' + (x + bw / 2) + '" y="' + (bh - 5) + '" style="font-size:6px">' + T.display(T.name(m, o.flats)) + "</text>");
     });
     s.push("</svg>");
     var el = OM.u.svg(s.join(""));

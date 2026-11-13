@@ -64,7 +64,19 @@ Para testar no navegador, sirva `dist/` por HTTP (`python3 -m http.server --dire
   instrumentos transpositores), identificador de notas com transcrição, calculadora de BPM (tap, detecção
   pelo microfone, tempos de delay), gravador de ideias (IndexedDB, exportação), bateria e grooves (sequenciador
   editável), percepção auditiva e dicionário musical.
-- **Aprender:** 10 exercícios com níveis liberados por desempenho (80%): acordes, notas no braço,
+- **Aprender (cursos e guias):** curso *Fundamentos da música* (notas, tons e semitons, escala maior, ritmo) e curso
+  *Aprender acordes* (o que é um acorde, como ler diagramas, maior × menor, primeiros acordes, símbolos da cifra, sétimas,
+  pestana, campo harmônico), com diagramas no seu instrumento, teclado, pauta e áudio. Guias de cada instrumento (partes,
+  afinação, notas no braço, primeiros acordes, transposição dos sopros, peças da bateria, dicas).
+- **Mapa do braço e do teclado:** todas as notas, naturais, encontrar uma nota, intervalos, escalas e acordes em
+  qualquer instrumento e afinação; ao tocar numa posição, mostra a nota, a frequência e onde a mesma nota se repete.
+- **Gravar sobre a cifra:** botão *Gravar* na tela da música grava áudio com a cifra na tela; as gravações ficam
+  ligadas à música e também aparecem no gravador de ideias.
+- **Importar/exportar músicas em JSON:** importa uma ou várias músicas (arquivo ou JSON colado, inclusive resposta de
+  IA dentro de ```json), mostra prévia e erros por item e pode criar um repertório. Exporta uma música, um repertório,
+  as suas cifras ou o acervo. O app também exporta um **guia JSON para IA** (formato, campos, notação de acordes,
+  seções, tablatura, partitura, exemplo completo e prompt sugerido) e um modelo vazio.
+- **Exercícios:** 10 exercícios com níveis liberados por desempenho (80%): acordes, notas no braço,
   leitura de partitura (claves de sol e fá), *toque a nota* (pelo microfone), escalas, ritmo (mede a precisão
   em milissegundos), mudanças de acordes por minuto, intervalos, acordes e notas de ouvido.
 - **Biblioteca:** favoritas, repertórios, para aprender, dominadas, minhas cifras e versões pessoais,
@@ -76,6 +88,21 @@ Instrumentos: violão (6 e 7 cordas), guitarra (6 e 7), baixo (4, 5 e 6), ukulel
 bandolim, banjo, violino, viola, violoncelo, contrabaixo, teclado, piano, bateria, sopros (flauta, flauta doce,
 saxofones, trompete, clarinete, trombone, trompa, gaita), voz e instrumentos personalizados
 (afinação livre ou transposição).
+
+### Formato JSON de músicas (resumo)
+
+```json
+{
+  "formato": "omusico-cifras", "versao": 1, "repertorio": "opcional",
+  "musicas": [
+    { "titulo": "Nome", "artista": "Artista", "tom": "G", "bpm": 90, "compasso": "4/4", "dificuldade": 2,
+      "cifra": "{c: Verso}\n[G]Letra com [D]acordes\n{soc}\n[C]Refrão [D]aqui\n{eoc}",
+      "anotacoes": "opcional", "melodia": { "clave": "sol", "tom": "G", "notas": "G4q A4q B4h" } }
+  ]
+}
+```
+
+O guia completo é gerado pelo próprio app em *Ferramentas › Importar / exportar › Exportar guia*.
 
 ### Acervo
 

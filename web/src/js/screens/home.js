@@ -63,6 +63,19 @@
         tile("library", "Biblioteca", L.favs().length + " favoritas · " + L.lists().length + " repertórios", function () { OM.router.tab("biblioteca"); }),
         tile(OM.inst.icon(inst), "Instrumentos", inst.n, function () { OM.router.push("instruments"); }));
       main.appendChild(g);
+      var nx = OM.lessons.nextLesson();
+      main.appendChild(h("button.card", { style: { display: "flex", alignItems: "center", gap: "14px", width: "100%", textAlign: "left", marginTop: "10px", background: "var(--acc-soft)", borderColor: "var(--acc)" },
+        onclick: function () { if (nx) OM.router.push("lesson", { course: nx.course.id, id: nx.lesson.id }); else OM.router.push("learn"); } },
+        h("span.ti", { html: OM.icon("learn"), style: { width: "42px", height: "42px", borderRadius: "12px", display: "grid", placeItems: "center", background: "var(--acc)", color: "var(--acc-ink)", flex: "none" } }),
+        h("div", { style: { flex: 1, minWidth: 0 } }, h("b", { text: nx ? "Continue aprendendo" : "Aprender música", style: { display: "block" } }),
+          h("small.muted", { text: nx ? nx.course.n + " · " + nx.lesson.n : "Cursos concluídos! Explore exercícios, guias e o mapa do braço." })),
+        h("span", { html: OM.icon("chev"), style: { width: "20px", color: "var(--acc)" } })));
+      main.appendChild(h("div.chips", { style: { marginTop: "10px" } },
+        h("button.chip", { text: "Cursos", onclick: function () { OM.router.push("learn"); } }),
+        h("button.chip", { text: "Instrumentos", onclick: function () { OM.router.push("instguides"); } }),
+        h("button.chip", { text: "Mapa do braço", onclick: function () { OM.router.push("fretmap"); } }),
+        h("button.chip", { text: "Acordes", onclick: function () { OM.router.push("chords"); } }),
+        h("button.chip", { text: "Importar JSON", onclick: function () { OM.router.push("transfer"); } })));
 
       var rec = L.recent().slice(0, 10);
       if (rec.length) {

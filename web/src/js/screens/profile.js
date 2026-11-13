@@ -99,6 +99,7 @@
         }))));
       content.appendChild(h("div.lbl", { text: "Dados" }));
       content.appendChild(h("div.list",
+        ui.item({ icon: "upload", iconCls: "acc", title: "Importar / exportar músicas (JSON)", sub: "Inclui o guia do formato para IA", onClick: function () { OM.router.push("transfer"); } }),
         ui.item({ icon: "trash", title: "Limpar histórico de prática", onClick: function () { ui.confirm("Apagar todo o histórico e as estatísticas de prática?", "Apagar", true).then(function (ok) { if (ok) { S.set("history", []); S.set("practiceDays", {}); ui.toast("Histórico apagado"); } }); } }),
         ui.item({ icon: "trash", title: "Zerar progresso dos exercícios", onClick: function () { ui.confirm("Zerar níveis e pontuação de todos os exercícios?", "Zerar", true).then(function (ok) { if (ok) { S.set("ex", {}); ui.toast("Progresso zerado"); } }); } })));
       content.appendChild(h("div.lbl", { text: "Sobre" }));

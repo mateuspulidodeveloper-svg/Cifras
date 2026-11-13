@@ -173,6 +173,18 @@
         h("div.card.stat", h("b", { text: totalXp() }), h("span", { text: "pontos (XP)" })),
         h("div.card.stat", h("b", { text: ex.length }), h("span", { text: "sessões" })),
         h("div.card.stat", h("b", { text: OM.lib.streak() }), h("span", { text: "dias seguidos" }))));
+      content.appendChild(ui.sec("Cursos e guias"));
+      var cl = h("div.list");
+      OM.COURSES.forEach(function (c) {
+        var n = OM.lessons.courseProgress(c);
+        var it = ui.item({ icon: c.icon, iconCls: "acc", title: c.n, sub: n + " de " + c.lessons.length + " lições · " + c.d, onClick: function () { OM.router.push("course", { id: c.id }); } });
+        it.querySelector(".tx").appendChild(h("div.prog", { style: { marginTop: "6px" } }, h("i", { style: { width: Math.round(n / c.lessons.length * 100) + "%" } })));
+        cl.appendChild(it);
+      });
+      cl.appendChild(ui.item({ icon: OM.inst.icon(OM.inst.current()), iconCls: "acc", title: "Conheça os instrumentos", sub: "Partes, afinação, primeiros acordes e dicas", onClick: function () { OM.router.push("instguides"); } }));
+      cl.appendChild(ui.item({ icon: "guitar", iconCls: "acc", title: "Mapa do braço e do teclado", sub: "Notas, intervalos, escalas e acordes em todo o instrumento", onClick: function () { OM.router.push("fretmap"); } }));
+      content.appendChild(cl);
+      content.appendChild(ui.sec("Exercícios"));
       [["Teoria e leitura", ["chords", "fretnotes", "staff", "scales"]], ["Prática com o instrumento", ["playnote", "rhythm", "changes"]], ["Percepção musical", ["intervals", "chordear", "earnotes"]]].forEach(function (grp) {
         content.appendChild(ui.sec(grp[0]));
         var l = h("div.list");

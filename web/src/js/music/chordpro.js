@@ -154,5 +154,28 @@
     return out.join("\n");
   }
 
-  OM.chordpro = { parse: parse, fromPlain: fromPlain, isChordLine: isChordLine, chordsOf: chordsOf, toPlain: toPlain };
+  /* estima o tom pela presença dos acordes no campo harmônico (maior/menor) */
+  function guessKey(body) {
+    var ch = OM.chordpro.chordsOf(OM.chordpro.parse(body));
+    if (!ch.length) return "";
+    /* pontua cada tonalidade pela presença dos acordes no campo harmônico; o último acorde pesa mais */
+    var best = "", bestSc = -1;
+    T.ROOTS.forEach(function (r) {
+      [["", [0, 2, 4, 5, 7, 9, 11], ["", "m", "m", "", "", "m", "°"]], ["m", [0, 2, 3, 5, 7, 8, 10], ["m", "°", "", "m", "m", "", ""]]].forEach(function (mode) {
+        var sc = 0, rp = T.pc(r);
+        ch.forEach(function (c, i) {
+          var p = T.parseChord(c); if (!p) return;
+          var deg = mode[1].indexOf(T.mod12(p.rootPc - rp));
+          var minor = /^m(?!aj)/.test(p.suffix) && !/^m7\(b5\)/.test(p.suffix);
+          if (deg >= 0) { var q = mode[2][deg]; sc += (q === "m") === minor ? 2 : 0.5; if (deg === 0) sc += 1.5; }
+          if (deg === 4 && mode[0] === "m" && !minor) sc += 1.5; /* V maior em menor harmônica */
+          if (i === 0 && deg === 0) sc += 1; if (i === ch.length - 1 && deg === 0) sc += 1;
+        });
+        if (sc > bestSc) { bestSc = sc; best = (T.keyUsesFlats(r + mode[0]) ? T.FLAT[rp] : T.SHARP[rp]) + mode[0]; }
+      });
+    });
+    return best;
+  }
+
+  OM.chordpro = { guessKey: guessKey, parse: parse, fromPlain: fromPlain, isChordLine: isChordLine, chordsOf: chordsOf, toPlain: toPlain };
 })(window.OM);

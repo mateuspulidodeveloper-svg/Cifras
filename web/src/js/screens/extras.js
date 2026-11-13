@@ -159,7 +159,7 @@
       if (inst.kind === "wind") {
         content.appendChild(h("div.lbl", { text: "Transposição" }));
         var tr = inst.transp || 0;
-        content.appendChild(h("div.card", h("p", { text: tr % 12 ? "Nota escrita Dó soa " + T.display(T.name(60 + tr)) + ". Cifras, afinador e identificador mostram a nota escrita para este instrumento." : "Instrumento em Dó: a nota escrita é a nota real" + (tr ? " (uma oitava acima/abaixo)." : ".") }),
+        content.appendChild(h("div.card", h("p", { text: tr % 12 ? "Nota escrita Dó soa " + T.display(T.name(60 + tr, true)) + ". Cifras, afinador e identificador mostram a nota escrita para este instrumento." : "Instrumento em Dó: a nota escrita é a nota real" + (tr ? " (uma oitava acima/abaixo)." : ".") }),
           inst.range ? h("p.muted", { style: { marginTop: "6px", fontSize: "13px" }, text: "Extensão aproximada (som real): " + inst.range.join(" – ") }) : null));
       }
       if (inst.custom) content.appendChild(h("div.btnrow", { style: { marginTop: "16px" } },

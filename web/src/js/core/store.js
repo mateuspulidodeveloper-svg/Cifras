@@ -68,7 +68,7 @@
   };
 
   /* ---------- backup ---------- */
-  var BACKUP_KEYS = ["settings", "userSongs", "edits", "songPrefs", "favorites", "lists", "status", "notes", "history", "recent", "ex", "customInst", "practiceDays", "drumUser", "tuningSel", "metro"];
+  var BACKUP_KEYS = ["settings", "userSongs", "edits", "songPrefs", "favorites", "lists", "status", "notes", "history", "recent", "ex", "customInst", "practiceDays", "drumUser", "tuningSel", "metro", "lessons"];
   function exportData() {
     var o = { app: "O Músico", version: 1, date: new Date().toISOString(), data: {} };
     BACKUP_KEYS.forEach(function (k) { var v = get(k, undefined); if (v !== undefined) o.data[k] = v; });

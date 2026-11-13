@@ -52,6 +52,8 @@
     tbar.appendChild(h("div.grp", ui.ibtn("minus", function () { setFs(state.fs - 1); }, "Diminuir fonte"), h("span", { html: OM.icon("font"), style: { width: "20px", color: "var(--tx2)" } }), ui.ibtn("plus", function () { setFs(state.fs + 1); }, "Aumentar fonte")));
     tbar.appendChild(scrollBtn);
     tbar.appendChild(pracBtn);
+    var recTbBtn = tb("mic", "Gravar", toggleRec);
+    tbar.appendChild(recTbBtn);
     tbar.appendChild(metBtn);
     tbar.appendChild(capoBtn);
     tbar.appendChild(instBtn);
@@ -166,6 +168,15 @@
           }, "sm")), r.svg);
         extra.appendChild(card);
       }
+      extra.appendChild(ui.sec("Minhas gravações desta música"));
+      var recBox = h("div");
+      extra.appendChild(recBox);
+      OM.recording.forSong(song.id).then(function (list) {
+        if (!list.length) { recBox.appendChild(h("div.card", h("p.muted", { style: { fontSize: "14px" }, text: "Toque em “Gravar” na barra acima para gravar você tocando ou cantando enquanto lê a cifra." }))); return; }
+        var l = h("div.list");
+        list.forEach(function (r) { l.appendChild(OM.recording.item(r, renderExtra)); });
+        recBox.appendChild(l);
+      }).catch(function () { });
       extra.appendChild(ui.sec("Anotações"));
       var note = L.note(song.id);
       var nc = h("div.card", { style: { cursor: "pointer" }, onclick: editNote }, note ? h("p", { text: note, style: { whiteSpace: "pre-wrap", fontSize: "14px" } }) : h("p.muted", { text: "Toque para adicionar anotações pessoais (dedilhado, dinâmica, lembretes de ensaio…)." }));
@@ -341,6 +352,34 @@
     }
     content.addEventListener("click", function () { if (state.present) showPresBar(); });
 
+    /* ---------- gravação de áudio sobre a cifra ---------- */
+    var rec = null, recStarting = false, recPill = null, recTimer = 0;
+    function toggleRec() { if (rec) stopRec(); else startRec(); }
+    function startRec() {
+      if (recStarting) return; recStarting = true;
+      var lvl = h("i"), tm = h("b.num", { text: "0:00" });
+      OM.recording.start(function (pk) { lvl.style.transform = "scaleX(" + Math.max(0.05, pk) + ")"; }).then(function (c) {
+        recStarting = false; rec = c;
+        recTbBtn.classList.add("on"); recTbBtn.lastChild.textContent = "Parar";
+        recPill = h("div.recpill", h("span.rdot"), tm, h("span.rlvl", lvl), h("button", { html: OM.icon("stop"), "aria-label": "Parar gravação", onclick: function (e) { e.stopPropagation(); stopRec(); } }));
+        view.appendChild(recPill);
+        recTimer = setInterval(function () { tm.textContent = OM.u.fmtTime(c.elapsed()); }, 250);
+        if (OM.store.settings().keepAwake) OM.bridge.keepAwake(true);
+        ui.toast("Gravando… a cifra continua na tela");
+      }).catch(function (e) { recStarting = false; ui.toast(e && e.name === "Unsupported" ? e.message : OM.audio.micErrorText(e), 4000); });
+    }
+    function stopRec() {
+      if (!rec) return;
+      var c = rec; rec = null; clearInterval(recTimer);
+      if (recPill) { recPill.remove(); recPill = null; }
+      recTbBtn.classList.remove("on"); recTbBtn.lastChild.textContent = "Gravar";
+      c.stop().then(function (r) {
+        return OM.recording.save(r, { songId: song.id, songTitle: song.title, key: soundingKey(), bpm: OM.metro.S.running ? OM.metro.S.bpm : 0 });
+      }).then(function () { ui.toast("Gravação salva em “Minhas gravações desta música”"); renderExtra(); })
+        .catch(function (e) { ui.toast(e.message || "Não foi possível salvar"); });
+      if (!state.scrolling && !OM.metro.S.running) OM.bridge.keepAwake(false);
+    }
+
     /* ---------- menu ---------- */
     function moreMenu() {
       ui.menu(song.title, [
@@ -348,6 +387,7 @@
         { icon: "edit", label: song.user ? "Editar cifra" : "Editar (versão pessoal)", sub: song.user ? null : "O original continua disponível", onClick: function () { OM.router.push("editor", { id: song.id }); } },
         song.edited ? { icon: "reset", label: "Restaurar cifra original", onClick: function () { ui.confirm("Descartar suas alterações nesta cifra?", "Restaurar", true).then(function (ok) { if (ok) { L.revertEdit(song.id); OM.router.replace("song", { id: song.id }); } }); } } : null,
         { icon: "notes", label: "Anotações", onClick: editNote },
+        { icon: "download", label: "Exportar como arquivo JSON", sub: "Para backup, outro aparelho ou edição por IA", onClick: function () { OM.transfer.exportFile([song.id], song.title); } },
         { icon: "share", label: "Compartilhar cifra (texto)", onClick: function () { OM.bridge.share(song.title + " — " + song.artist + (soundingKey() ? "\nTom: " + soundingKey() : "") + "\n\n" + OM.chordpro.toPlain(parsed, tc)); } },
         { icon: "reset", label: "Voltar ao tom original", onClick: function () { setTr(0); } },
         song.user ? { icon: "trash", label: "Excluir cifra", danger: true, onClick: function () { ui.confirm("Excluir “" + song.title + "” definitivamente?", "Excluir", true).then(function (ok) { if (ok) { L.deleteUserSong(song.id); OM.router.back(); ui.toast("Cifra excluída"); } }); } } : null
@@ -371,6 +411,7 @@
       onShow: function () { state.inst = state.inst.id === OM.store.settings().instrument ? OM.inst.current() : state.inst; syncMet(); },
       onBack: function () { if (state.present) { setPresent(false); return true; } if (practice) { practice.stop(); return true; } return false; },
       destroy: function () {
+        stopRec();
         offMet(); stopScroll(); if (stopMelody) stopMelody();
         if (practice) practice.stop();
         var spent = (Date.now() - openedAt) / 60000;

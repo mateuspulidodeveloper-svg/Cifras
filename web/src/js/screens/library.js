@@ -30,6 +30,8 @@
         ls.forEach(function (x) { l.appendChild(ui.item({ icon: "list", iconCls: "acc", title: x.name, sub: x.songs.length + (x.songs.length === 1 ? " música" : " músicas"), onClick: function () { OM.router.push("list", { id: x.id }); } })); });
         content.appendChild(l);
       }
+      content.appendChild(ui.sec("Importar e exportar"));
+      content.appendChild(h("div.list", ui.item({ icon: "upload", iconCls: "acc", title: "Músicas em JSON", sub: "Importar arquivos, exportar cifras e guia para IA", onClick: function () { OM.router.push("transfer"); } })));
       content.appendChild(ui.sec("Gravações"));
       content.appendChild(h("div.list", ui.item({ icon: "mic", iconCls: "acc", title: "Gravador de ideias", sub: "Suas gravações guardadas no aparelho", onClick: function () { OM.router.push("recorder"); } })));
       content.appendChild(ui.sec("Recentes", "Ver todas", function () { OM.router.push("songlist", { kind: "recent" }); }));
@@ -88,6 +90,7 @@
       ui.menu(l.name, [
         { icon: "edit", label: "Renomear", onClick: function () { ui.prompt("Renomear repertório", "Nome", l.name).then(function (n) { if (n) { l.name = n; L.saveList(l); draw(); } }); } },
         { icon: "swap", label: editing ? "Concluir reorganização" : "Reorganizar / remover músicas", onClick: function () { editing = !editing; draw(); } },
+        { icon: "download", label: "Exportar repertório (JSON)", onClick: function () { OM.transfer.exportFile(l.songs, l.name, l.name); } },
         { icon: "share", label: "Compartilhar lista", onClick: function () { OM.bridge.share(l.name + "\n\n" + l.songs.map(function (id, i) { var s = L.get(id); return s ? (i + 1) + ". " + s.title + " — " + s.artist + (s.key ? " (" + s.key + ")" : "") : ""; }).filter(Boolean).join("\n")); } },
         { icon: "trash", label: "Excluir repertório", danger: true, onClick: function () { ui.confirm("Excluir “" + l.name + "”? As cifras não serão apagadas.", "Excluir", true).then(function (ok) { if (ok) { L.deleteList(l.id); OM.router.back(); } }); } }
       ]);

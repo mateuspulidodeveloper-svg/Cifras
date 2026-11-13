@@ -306,6 +306,8 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border:0;border-radiu
 .notice svg{width:20px;height:20px;flex:none;color:var(--acc);margin-top:1px}
 .notice.err{background:var(--bad-soft);color:var(--tx)}
 .notice.err svg{color:var(--bad)}
+.fretboard .fb-n.q{fill:var(--acc);stroke:var(--tx);stroke-width:2}
+.chip.on{pointer-events:auto}
 
 /* O Músico — estilos específicos das telas */
 
@@ -504,6 +506,17 @@ audio{width:100%;height:40px;margin-top:8px}
 .tn-dir span{display:inline-flex;align-items:center;gap:2px}
 .tn-dir svg{width:16px;height:16px}
 
+/* gravação sobre a cifra */
+.recpill{position:absolute;right:12px;top:calc(var(--top) + var(--safeT) + 64px);z-index:7;display:flex;align-items:center;gap:8px;padding:6px 6px 6px 12px;border-radius:999px;
+  background:var(--s3);border:1px solid var(--bad);box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:14px}
+.present .recpill{top:calc(12px + var(--safeT))}
+.recpill .rdot{width:10px;height:10px;border-radius:50%;background:var(--bad);animation:blink 1s infinite}
+.recpill .rlvl{width:44px;height:4px;border-radius:2px;background:var(--s4);overflow:hidden}
+.recpill .rlvl i{display:block;height:100%;width:100%;background:var(--bad);transform-origin:left;transform:scaleX(.05);transition:transform .06s}
+.recpill button{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--bad);color:#fff}
+.recpill button svg{width:14px;height:14px}
+@keyframes blink{50%{opacity:.25}}
+
 </style>
 </head>
 <body>
@@ -675,7 +688,7 @@ window.OM = window.OM || {};
   };
 
   /* ---------- backup ---------- */
-  var BACKUP_KEYS = ["settings", "userSongs", "edits", "songPrefs", "favorites", "lists", "status", "notes", "history", "recent", "ex", "customInst", "practiceDays", "drumUser", "tuningSel", "metro"];
+  var BACKUP_KEYS = ["settings", "userSongs", "edits", "songPrefs", "favorites", "lists", "status", "notes", "history", "recent", "ex", "customInst", "practiceDays", "drumUser", "tuningSel", "metro", "lessons"];
   function exportData() {
     var o = { app: "O Músico", version: 1, date: new Date().toISOString(), data: {} };
     BACKUP_KEYS.forEach(function (k) { var v = get(k, undefined); if (v !== undefined) o.data[k] = v; });
@@ -1886,6 +1899,98 @@ window.OM = window.OM || {};
   OM.Clock = Clock; OM.at = at; OM.metro = metro;
 })(window.OM);
 
+/* ===== js/music/recording.js ===== */
+/* O Músico — gravação de áudio reutilizável (gravador de ideias e gravação sobre a cifra).
+   Usa MediaRecorder sobre o microfone; as gravações ficam no IndexedDB do aparelho. */
+(function (OM) {
+  "use strict";
+  var h = OM.u.h;
+
+  function supported() { return typeof MediaRecorder !== "undefined"; }
+  function mime() {
+    var c = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+    for (var i = 0; i < c.length; i++) if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c[i])) return c[i];
+    return "";
+  }
+
+  /* inicia a gravação. onLevel(pico 0..1) é chamado a cada quadro.
+     Retorna Promise<ctrl>; ctrl.stop() -> Promise<{blob, type, duration}> */
+  function start(onLevel) {
+    if (!supported()) return Promise.reject({ name: "Unsupported", message: "Gravação não suportada neste WebView. Atualize o Android System WebView." });
+    return OM.audio.getMic().then(function (stream) {
+      var ctx = OM.audio.context(), src = ctx.createMediaStreamSource(stream), an = ctx.createAnalyser();
+      an.fftSize = 2048; src.connect(an);
+      var buf = new Float32Array(2048), m = mime(), mr, chunks = [], raf = 0, t0 = Date.now(), stopped = false;
+      try { mr = m ? new MediaRecorder(stream, { mimeType: m }) : new MediaRecorder(stream); } catch (e) { mr = new MediaRecorder(stream); }
+      mr.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+      mr.start(500);
+      (function loop() {
+        raf = requestAnimationFrame(loop);
+        an.getFloatTimeDomainData(buf);
+        var pk = 0; for (var i = 0; i < buf.length; i++) { var a = buf[i] < 0 ? -buf[i] : buf[i]; if (a > pk) pk = a; }
+        onLevel && onLevel(Math.min(1, pk * 1.4));
+      })();
+      function cleanup() { cancelAnimationFrame(raf); try { src.disconnect(); } catch (e) { } OM.audio.releaseMic(); }
+      return {
+        t0: t0,
+        elapsed: function () { return (Date.now() - t0) / 1000; },
+        stop: function () {
+          if (stopped) return Promise.resolve(null);
+          stopped = true;
+          return new Promise(function (res) {
+            mr.onstop = function () {
+              cleanup();
+              var type = mr.mimeType || m || "audio/webm";
+              res({ blob: new Blob(chunks, { type: type }), type: type, duration: (Date.now() - t0) / 1000 });
+            };
+            if (mr.state !== "inactive") mr.stop(); else mr.onstop();
+          });
+        }
+      };
+    });
+  }
+  /* salva o resultado; meta: {name, songId, songTitle, key, bpm} */
+  function save(r, meta) {
+    meta = meta || {};
+    if (!r || r.duration < 0.5 || !r.blob.size) return Promise.reject(new Error("Gravação muito curta"));
+    var d = new Date();
+    var rec = Object.assign({
+      id: OM.u.uid("r"), date: Date.now(), duration: r.duration, type: r.type, blob: r.blob,
+      name: (meta.songTitle ? meta.songTitle + " — " : "Ideia ") + d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+    }, meta);
+    return OM.store.rec.put(rec).then(function () {
+      OM.lib.log({ type: "tool", icon: "mic", screen: "recorder", title: "Gravação: " + rec.name, minutes: Math.round(rec.duration / 6) / 10 });
+      return rec;
+    });
+  }
+  function forSong(id) { return OM.store.rec.all().then(function (a) { return a.filter(function (r) { return r.songId === id; }); }); }
+  function ext(type) { return /mp4/.test(type) ? "m4a" : /ogg/.test(type) ? "ogg" : "webm"; }
+
+  /* folha com player e ações (renomear, exportar, excluir, abrir cifra) */
+  function openSheet(r, onChange) {
+    var ui = OM.ui, url = URL.createObjectURL(r.blob);
+    var audio = h("audio", { controls: true, src: url });
+    var info = h("p.muted", { style: { fontSize: "13px", marginBottom: "8px" }, text: OM.u.fmtDate(r.date) + " · " + OM.u.fmtTime(r.duration) + (r.key ? " · Tom " + r.key : "") + (r.bpm ? " · " + r.bpm + " BPM" : "") });
+    var s;
+    var box = h("div", info, audio, h("div.btnrow", { style: { marginTop: "14px" } },
+      r.songId && OM.lib.get(r.songId) ? ui.btn("Abrir cifra", "cifras", function () { s.close(); OM.router.push("song", { id: r.songId }); }, "sm") : null,
+      ui.btn("Renomear", "edit", function () { ui.prompt("Renomear gravação", "Nome", r.name).then(function (n) { if (!n) return; r.name = n; OM.store.rec.put(r).then(function () { s.close(); onChange && onChange(); }); }); }, "sm"),
+      ui.btn("Exportar", "download", function () {
+        OM.bridge.saveFile(r.name.replace(/[^\w\- ]+/g, "_") + "." + ext(r.type), r.type.split(";")[0], r.blob).then(function (path) { ui.toast(path ? "Salvo em " + path : "Não foi possível exportar"); });
+      }, "sm"),
+      ui.btn("Excluir", "trash", function () { ui.confirm("Excluir “" + r.name + "”?", "Excluir", true).then(function (ok) { if (ok) OM.store.rec.del(r.id).then(function () { s.close(); onChange && onChange(); }); }); }, "sm danger")));
+    s = ui.sheet({ title: r.name, content: box, onClose: function () { audio.pause(); URL.revokeObjectURL(url); } });
+    audio.play().catch(function () { });
+    return s;
+  }
+  function item(r, onChange) {
+    return OM.ui.item({ icon: "wave", iconCls: "acc", title: r.name, sub: OM.u.fmtDate(r.date) + " · " + OM.u.fmtTime(r.duration) + (r.bpm ? " · " + r.bpm + " BPM" : ""),
+      end: h("span", { html: OM.icon("play") }), onClick: function () { openSheet(r, onChange); } });
+  }
+
+  OM.recording = { supported: supported, start: start, save: save, forSong: forSong, openSheet: openSheet, item: item };
+})(window.OM);
+
 /* ===== js/music/chordpro.js ===== */
 /* O Músico — leitura de cifras.
    Aceita ChordPro ([C]letra, {title: …}, {soc}/{eoc}, {sot}/{eot}, {c: …})
@@ -2043,7 +2148,30 @@ window.OM = window.OM || {};
     return out.join("\n");
   }
 
-  OM.chordpro = { parse: parse, fromPlain: fromPlain, isChordLine: isChordLine, chordsOf: chordsOf, toPlain: toPlain };
+  /* estima o tom pela presença dos acordes no campo harmônico (maior/menor) */
+  function guessKey(body) {
+    var ch = OM.chordpro.chordsOf(OM.chordpro.parse(body));
+    if (!ch.length) return "";
+    /* pontua cada tonalidade pela presença dos acordes no campo harmônico; o último acorde pesa mais */
+    var best = "", bestSc = -1;
+    T.ROOTS.forEach(function (r) {
+      [["", [0, 2, 4, 5, 7, 9, 11], ["", "m", "m", "", "", "m", "°"]], ["m", [0, 2, 3, 5, 7, 8, 10], ["m", "°", "", "m", "m", "", ""]]].forEach(function (mode) {
+        var sc = 0, rp = T.pc(r);
+        ch.forEach(function (c, i) {
+          var p = T.parseChord(c); if (!p) return;
+          var deg = mode[1].indexOf(T.mod12(p.rootPc - rp));
+          var minor = /^m(?!aj)/.test(p.suffix) && !/^m7\(b5\)/.test(p.suffix);
+          if (deg >= 0) { var q = mode[2][deg]; sc += (q === "m") === minor ? 2 : 0.5; if (deg === 0) sc += 1.5; }
+          if (deg === 4 && mode[0] === "m" && !minor) sc += 1.5; /* V maior em menor harmônica */
+          if (i === 0 && deg === 0) sc += 1; if (i === ch.length - 1 && deg === 0) sc += 1;
+        });
+        if (sc > bestSc) { bestSc = sc; best = (T.keyUsesFlats(r + mode[0]) ? T.FLAT[rp] : T.SHARP[rp]) + mode[0]; }
+      });
+    });
+    return best;
+  }
+
+  OM.chordpro = { guessKey: guessKey, parse: parse, fromPlain: fromPlain, isChordLine: isChordLine, chordsOf: chordsOf, toPlain: toPlain };
 })(window.OM);
 
 /* ===== js/music/staff.js ===== */
@@ -2722,6 +2850,160 @@ E|-----------|-----------|-----------|-3---------|
   OM.DRUM_ROWS = ["ride", "open", "hat", "shaker", "rim", "snare", "tom", "kick"];
 })(window.OM);
 
+/* ===== js/data/lessons.js ===== */
+/* O Músico — conteúdo didático: cursos, lições e guias de instrumentos.
+   Tipos de bloco: p (parágrafo), h (subtítulo), tip (destaque), list (itens), table (linhas),
+   chords (diagramas no instrumento atual), piano (teclas destacadas), play (tocar notas/acordes),
+   prog (progressão de acordes tocada em sequência), staff (pauta), fret (braço), link (abrir tela). */
+(function (OM) {
+  "use strict";
+  OM.COURSES = [
+    {
+      id: "fundamentos", n: "Fundamentos da música", icon: "book", d: "Notas, tons e semitons, escala maior e ritmo.",
+      lessons: [
+        { id: "f1", n: "As 7 notas e os acidentes", b: [
+          { t: "p", text: "A música ocidental usa sete notas naturais: Dó, Ré, Mi, Fá, Sol, Lá e Si. Nas cifras elas são escritas com letras: C (Dó), D (Ré), E (Mi), F (Fá), G (Sol), A (Lá) e B (Si)." },
+          { t: "table", rows: [["C", "Dó"], ["D", "Ré"], ["E", "Mi"], ["F", "Fá"], ["G", "Sol"], ["A", "Lá"], ["B", "Si"]] },
+          { t: "piano", from: 48, to: 71, notes: [60, 62, 64, 65, 67, 69, 71], labels: true },
+          { t: "play", label: "Ouvir Dó, Ré, Mi, Fá, Sol, Lá, Si", seq: [60, 62, 64, 65, 67, 69, 71, 72] },
+          { t: "p", text: "Entre algumas notas existem notas intermediárias, as teclas pretas do piano. Elas recebem acidentes: sustenido (#) sobe meio tom e bemol (b) desce meio tom. C# e Db são o mesmo som com nomes diferentes." },
+          { t: "tip", text: "Depois do Si vem outro Dó, mais agudo. A distância entre os dois é uma oitava, e o ciclo das notas se repete." }
+        ] },
+        { id: "f2", n: "Tons e semitons", b: [
+          { t: "p", text: "O semitom é a menor distância entre duas notas. No violão, é uma casa; no piano, a tecla vizinha (branca ou preta). Um tom são dois semitons." },
+          { t: "list", items: ["Mi–Fá e Si–Dó são semitons naturais: não há tecla preta entre eles.", "Dó–Ré, Ré–Mi, Fá–Sol, Sol–Lá e Lá–Si são tons.", "Em instrumentos de corda, cada casa sobe um semitom; 12 casas = uma oitava."] },
+          { t: "fret", frets: 12, mode: "string1" },
+          { t: "play", label: "Ouvir semitom (Mi–Fá)", seq: [64, 65] },
+          { t: "play", label: "Ouvir tom (Dó–Ré)", seq: [60, 62] },
+          { t: "link", label: "Explorar o mapa do braço", screen: "fretmap" }
+        ] },
+        { id: "f3", n: "A escala maior", b: [
+          { t: "p", text: "Uma escala é uma sequência organizada de notas. A escala maior segue sempre o mesmo desenho de distâncias: tom, tom, semitom, tom, tom, tom, semitom (T-T-S-T-T-T-S)." },
+          { t: "piano", from: 60, to: 72, notes: [60, 62, 64, 65, 67, 69, 71, 72], roots: [0], labels: true },
+          { t: "play", label: "Ouvir Dó maior", seq: [60, 62, 64, 65, 67, 69, 71, 72] },
+          { t: "p", text: "Começando de outra nota e respeitando o mesmo desenho, aparecem sustenidos ou bemóis. Sol maior, por exemplo, precisa do Fá#: G A B C D E F# G." },
+          { t: "play", label: "Ouvir Sol maior", seq: [67, 69, 71, 72, 74, 76, 78, 79] },
+          { t: "link", label: "Abrir o gerador de escalas", screen: "scales" },
+          { t: "link", label: "Treinar escalas", screen: "exercise", params: { id: "scales" } }
+        ] },
+        { id: "f4", n: "Ritmo: pulso, compasso e figuras", b: [
+          { t: "p", text: "O pulso é a batida regular da música: a que você marca com o pé. O andamento mede quantos pulsos acontecem por minuto (BPM)." },
+          { t: "p", text: "O compasso agrupa os pulsos: em 4/4 contamos 1-2-3-4, em 3/4 (valsa) 1-2-3, em 2/4 1-2. O primeiro tempo costuma ser o mais forte." },
+          { t: "h", text: "Figuras de duração (em 4/4)" },
+          { t: "staff", notes: "C5w | C5h C5h | C5q C5q C5q C5q | C5e C5e C5e C5e C5e C5e C5e C5e", time: "4/4" },
+          { t: "table", rows: [["Semibreve", "4 tempos"], ["Mínima", "2 tempos"], ["Semínima", "1 tempo"], ["Colcheia", "½ tempo"], ["Semicolcheia", "¼ de tempo"]] },
+          { t: "tip", text: "Pratique sempre com metrônomo, começando devagar. A velocidade vem com a precisão." },
+          { t: "link", label: "Abrir o metrônomo", screen: "metronome" },
+          { t: "link", label: "Exercício de ritmo", screen: "exercise", params: { id: "rhythm" } }
+        ] }
+      ]
+    },
+    {
+      id: "acordes", n: "Aprender acordes", icon: "grid", d: "Do primeiro acorde à pestana e ao campo harmônico.",
+      lessons: [
+        { id: "a1", n: "O que é um acorde", b: [
+          { t: "p", text: "Acorde é um conjunto de três ou mais notas tocadas juntas. O mais simples é a tríade: fundamental (dá o nome), terça (define se é maior ou menor) e quinta (dá corpo)." },
+          { t: "piano", from: 48, to: 71, notes: [60, 64, 67], roots: [0], labels: true },
+          { t: "play", label: "Ouvir as notas de Dó maior separadas", seq: [60, 64, 67] },
+          { t: "play", label: "Ouvir o acorde C (juntas)", chord: "C" },
+          { t: "p", text: "Em qualquer instrumento, o acorde C é formado pelas notas Dó, Mi e Sol, repetidas em várias alturas." },
+          { t: "chords", names: ["C"] }
+        ] },
+        { id: "a2", n: "Como ler um diagrama", b: [
+          { t: "p", text: "O diagrama mostra o braço do instrumento de frente, na vertical. As linhas verticais são as cordas (a mais grave à esquerda) e as horizontais são os trastes. A linha grossa no topo é a pestana do instrumento (a casa zero)." },
+          { t: "chords", names: ["C", "G"], big: true },
+          { t: "table", rows: [["Bolinha com número", "onde apertar e qual dedo usar"], ["1, 2, 3, 4", "indicador, médio, anelar e mínimo"], ["○ acima do braço", "corda solta: toca sem apertar"], ["× acima do braço", "corda abafada: não toque"], ["Bolinha laranja", "a fundamental do acorde"], ["Barra horizontal", "pestana: um dedo prende várias cordas"], ["Número ao lado", "casa onde o desenho começa"]] },
+          { t: "tip", text: "Toque num diagrama para ouvir o acorde. Se você toca teclado ou piano, os acordes aparecem como teclas destacadas." }
+        ] },
+        { id: "a3", n: "Maior × menor", b: [
+          { t: "p", text: "A diferença entre um acorde maior e um menor está na terça: no menor ela fica meio tom abaixo. O maior soa aberto e alegre; o menor, mais introspectivo." },
+          { t: "piano", from: 48, to: 71, notes: [60, 63, 67], roots: [0], labels: true },
+          { t: "play", label: "Ouvir C (maior)", chord: "C" },
+          { t: "play", label: "Ouvir Cm (menor)", chord: "Cm" },
+          { t: "p", text: "Na cifra, o menor leva um “m” minúsculo: Am, Em, Dm." },
+          { t: "chords", names: ["A", "Am", "E", "Em", "D", "Dm"] },
+          { t: "link", label: "Acordes de ouvido: maior × menor", screen: "exercise", params: { id: "chordear" } }
+        ] },
+        { id: "a4", n: "Seus primeiros acordes", b: [
+          { t: "p", text: "Comece com estes seis acordes. Com eles você já toca centenas de músicas." },
+          { t: "chords", names: ["Em", "Am", "C", "G", "D", "E"] },
+          { t: "list", items: ["Aperte com a ponta dos dedos, bem perto do traste (não em cima dele).", "Mantenha os dedos arqueados para não encostar nas cordas vizinhas.", "Toque corda por corda para conferir se todas soam limpas.", "Dor na ponta dos dedos é normal nas primeiras semanas; pratique pouco e todos os dias."] },
+          { t: "prog", label: "Ouvir Em – Am – D – G", chords: ["Em", "Am", "D", "G"] },
+          { t: "link", label: "Treinar: aprender acordes", screen: "exercise", params: { id: "chords" } },
+          { t: "link", label: "Treinar: mudanças de acordes", screen: "exercise", params: { id: "changes" } }
+        ] },
+        { id: "a5", n: "Lendo os símbolos da cifra", b: [
+          { t: "p", text: "Depois da letra da fundamental, a cifra diz o tipo do acorde. Os símbolos mais usados no Brasil:" },
+          { t: "table", rows: [["C", "Dó maior"], ["Cm", "Dó menor"], ["C7", "Dó com sétima (dominante)"], ["C7M", "Dó com sétima maior (também Cmaj7)"], ["Cm7", "Dó menor com sétima"], ["C°", "Dó diminuto"], ["Cm7(b5)", "meio-diminuto (também Cø)"], ["C+ / Caug", "aumentado"], ["C4 / Csus4", "suspenso com quarta"], ["C(9) / Cadd9", "com nona adicionada"], ["C6", "com sexta"], ["C/E", "Dó maior com Mi no baixo (inversão)"]] },
+          { t: "chords", names: ["C7M", "Cm7", "Csus4", "C/E"] },
+          { t: "link", label: "Abrir a biblioteca de acordes", screen: "chords" }
+        ] },
+        { id: "a6", n: "Acordes com sétima", b: [
+          { t: "p", text: "Somar a sétima menor a um acorde maior cria o acorde dominante (G7), que pede resolução: ele “puxa” para o acorde uma quarta acima (G7 → C)." },
+          { t: "chords", names: ["G7", "C7", "D7", "A7", "E7", "B7"] },
+          { t: "prog", label: "Ouvir G7 → C (resolução)", chords: ["G7", "C"] },
+          { t: "prog", label: "Ouvir E7 → Am", chords: ["E7", "Am"] },
+          { t: "tip", text: "Muitas músicas no tom de Mi menor usam B7 antes de voltar ao Em; no tom de Lá, E7 antes de A." }
+        ] },
+        { id: "a7", n: "Pestana", b: [
+          { t: "p", text: "Na pestana, o indicador prende várias cordas na mesma casa enquanto os outros dedos formam o desenho. A vantagem: o mesmo desenho, movido pelo braço, gera acordes de qualquer tom." },
+          { t: "chords", names: ["F", "Bm", "F#m", "Bb"] },
+          { t: "list", items: ["Use a lateral do indicador, levemente girado para fora.", "Mantenha o polegar atrás do braço, mais ou menos na altura do dedo médio.", "Não force: o peso do braço ajuda mais que a força da mão.", "Os dois desenhos principais têm a fundamental na 6ª corda (forma de Mi) e na 5ª corda (forma de Lá)."] },
+          { t: "link", label: "Ver todas as posições de F no braço", screen: "chord", params: { name: "F" } }
+        ] },
+        { id: "a8", n: "Campo harmônico e progressões", b: [
+          { t: "p", text: "Os acordes formados com as notas de uma escala maior formam o campo harmônico. Em Dó maior: C, Dm, Em, F, G, Am e B°. Músicas de um mesmo tom usam principalmente esses acordes." },
+          { t: "table", rows: [["I", "C"], ["ii", "Dm"], ["iii", "Em"], ["IV", "F"], ["V", "G (G7)"], ["vi", "Am"], ["vii°", "B°"]] },
+          { t: "prog", label: "Ouvir I – V – vi – IV (C G Am F)", chords: ["C", "G", "Am", "F"] },
+          { t: "prog", label: "Ouvir ii – V – I (Dm7 G7 C7M)", chords: ["Dm7", "G7", "C7M"] },
+          { t: "tip", text: "Conhecendo os graus, você transpõe qualquer música: em Sol maior, I–V–vi–IV vira G–D–Em–C." },
+          { t: "link", label: "Ver o campo harmônico no gerador de escalas", screen: "scales" },
+          { t: "link", label: "Transpositor de tons", screen: "transposer" }
+        ] }
+      ]
+    }
+  ];
+
+  /* guias de instrumentos */
+  OM.INST_INFO = {
+    violao: { d: "Instrumento de 6 cordas de nylon (clássico) ou aço (folk), base da música popular brasileira. Acompanha voz com acordes, batidas e dedilhados.",
+      partes: ["Mão (cabeça) com tarraxas: afinam as cordas", "Braço com trastes: cada casa é um semitom", "Boca e tampo: projetam o som", "Rastilho e cavalete: apoiam e prendem as cordas"],
+      dicas: ["Afine antes de cada estudo", "Comece pelos acordes Em, Am, C, G, D e E", "Pratique batidas simples com metrônomo a 60–80 BPM", "Estude 15 a 20 minutos por dia, todos os dias"], first: ["Em", "Am", "C", "G", "D", "E"] },
+    violao7: { d: "Violão com uma sétima corda grave, muito usado no choro e no samba para fazer as “baixarias” (linhas de baixo).", partes: ["7ª corda grave (Dó ou Si)", "Mesmo braço e trastes do violão de 6"], dicas: ["Domine primeiro o violão de 6 cordas", "Estude escalas na região grave para criar contrapontos"], first: ["C", "G", "Am", "D7"] },
+    guitarra: { d: "Instrumento elétrico de 6 cordas de aço. Precisa de amplificador; os captadores transformam a vibração em sinal elétrico. Rock, blues, pop, jazz e gospel.",
+      partes: ["Captadores e chave seletora", "Controles de volume e tonalidade", "Ponte (fixa ou com alavanca)", "Saída para o cabo do amplificador"],
+      dicas: ["Comece com power chords (E5, A5, D5)", "Use palheta e treine palhetada alternada com metrônomo", "Aprenda a pentatônica menor: a escala mais usada em solos"], first: ["E5", "A5", "G", "D", "Em", "C"] },
+    guitarra7: { d: "Guitarra com uma corda grave extra (Si). Comum no metal e no jazz para ampliar a região grave.", partes: ["7ª corda Si grave", "Braço mais largo"], dicas: ["Abafe a 7ª corda com a palma quando não usá-la"], first: ["E5", "B5", "Em", "G"] },
+    baixo4: { d: "O contrabaixo elétrico liga harmonia e ritmo: toca a nota fundamental dos acordes junto com o bumbo da bateria. Afinação igual às 4 cordas graves do violão, uma oitava abaixo.",
+      partes: ["4 cordas: E A D G", "Captadores e controles", "Braço longo (escala de 34\")"],
+      dicas: ["Toque as fundamentais dos acordes em semínimas com o metrônomo", "Use dois dedos alternados (indicador e médio)", "Aprenda as notas das cordas E e A: elas dão a posição de qualquer fundamental"], first: [] },
+    baixo5: { d: "Baixo com uma corda Si grave a mais, para notas abaixo do Mi.", partes: ["5 cordas: B E A D G"], dicas: ["Abafe a corda Si quando não usá-la"], first: [] },
+    baixo6: { d: "Baixo com cordas Si grave e Dó agudo; amplia graves e permite acordes e solos.", partes: ["6 cordas: B E A D G C"], dicas: ["Atenção ao abafamento: mais cordas, mais ruídos"], first: [] },
+    ukulele: { d: "Pequeno instrumento havaiano de 4 cordas de nylon. Afinação G C E A reentrante: a corda Sol é aguda, o que dá o som brilhante característico.",
+      partes: ["4 cordas: G C E A", "Corpo pequeno (soprano, concerto, tenor ou barítono)"], dicas: ["Primeiros acordes: C, Am, F, G", "Batida básica: baixo, baixo-cima, cima-baixo-cima"], first: ["C", "Am", "F", "G"] },
+    viola: { d: "A viola caipira tem 10 cordas em 5 pares (ordens) e é o som da música caipira e sertaneja raiz. As afinações mais comuns são Cebolão (em Mi ou em Ré) e Rio Abaixo.",
+      partes: ["5 pares de cordas; os graves são oitavados", "10 tarraxas", "Boca com rosácea"], dicas: ["Aprenda primeiro em Cebolão em Mi ou em Ré", "Muitos ponteados usam terças paralelas nos pares agudos"], first: ["E", "A", "B7"] },
+    cavaco: { d: "O cavaquinho, de 4 cordas de aço, é o centro do samba, do pagode e do choro. Afinação tradicional: Ré, Sol, Si, Ré.",
+      partes: ["4 cordas: D G B D", "Corpo pequeno e escala curta"], dicas: ["A palhetada de samba usa movimentos curtos e constantes", "Primeiros acordes: D, G, A7, Bm, E7"], first: ["D", "G", "A7", "Bm", "E7"] },
+    bandolim: { d: "Instrumento de 8 cordas em 4 pares, afinado como o violino (G D A E). É o solista do choro.", partes: ["4 pares de cordas", "Tocado com palheta"], dicas: ["Use a mesma digitação de escalas do violino", "Treine trêmulo (palhetada rápida e contínua)"], first: ["G", "D", "C", "Am"] },
+    banjo: { d: "Banjo de 5 cordas, com a 5ª corda curta e aguda (reentrante). Pele no lugar do tampo de madeira; som brilhante do bluegrass e do folk.", partes: ["Pele (como a de um tambor)", "5ª corda curta presa no meio do braço"], dicas: ["Afinação Open G: as cordas soltas já formam o acorde G", "Aprenda o padrão de dedilhado rolado (roll)"], first: ["G", "C", "D7"] },
+    violino: { d: "Instrumento de arco de 4 cordas (G D A E) afinadas em quintas. Não tem trastes: a afinação de cada nota depende do ouvido e da posição exata do dedo.",
+      partes: ["Arco com crina de cavalo (passe breu)", "Espelho sem trastes", "Cavalete e alma", "Microafinadores no estandarte"], dicas: ["Use o afinador nas cordas soltas e o identificador de notas para conferir as posições", "Comece com cordas soltas e arcadas longas", "Estude a escala de Ré maior na 1ª posição"], first: [] },
+    violaorq: { d: "A viola de arco é um pouco maior que o violino e soa uma quinta abaixo (C G D A). Lê na clave de Dó.", partes: ["Mesmas partes do violino, em tamanho maior"], dicas: ["Treine leitura em clave de Dó na 3ª linha"], first: [] },
+    violoncelo: { d: "O violoncelo é tocado sentado, apoiado no chão, com cordas C G D A uma oitava abaixo da viola. Lê principalmente em clave de Fá.", partes: ["Espigão de apoio", "Arco mais pesado"], dicas: ["Postura: costas retas, instrumento levemente inclinado", "Comece com cordas soltas e escalas de Dó e Sol maior"], first: [] },
+    contrabaixo: { d: "O maior instrumento de cordas da orquestra, afinado em quartas (E A D G). No jazz é tocado em pizzicato (beliscado).", partes: ["Tocado de pé ou em banqueta", "Arco francês ou alemão"], dicas: ["No jazz, aprenda a fazer walking bass sobre o blues"], first: [] },
+    teclado: { d: "Instrumento eletrônico de teclas com vários timbres e ritmos. Permite tocar acordes com a mão esquerda e melodia com a direita.",
+      partes: ["Teclas brancas (notas naturais) e pretas (acidentes)", "O Dó fica à esquerda de cada grupo de 2 teclas pretas", "Controles de timbre e ritmo"], dicas: ["Dedilhado: polegar = 1, mínimo = 5", "Comece com C, F, G e Am na mão esquerda", "Toque a escala de Dó maior com as duas mãos"], first: ["C", "F", "G", "Am"] },
+    piano: { d: "Instrumento de teclas com cordas percutidas por martelos. 88 teclas, do Lá0 ao Dó8; o som depende da força do toque. Base da teoria musical.",
+      partes: ["88 teclas", "Pedal de sustentação (direita)", "Pedal surdina (esquerda)"], dicas: ["Encontre o Dó central (C4)", "Pratique mãos separadas antes de juntar", "Estude escalas e arpejos todos os dias"], first: ["C", "G", "Am", "F"] },
+    bateria: { d: "A bateria reúne tambores e pratos tocados com baquetas e pedais. O baterista mantém o tempo e dá o groove.",
+      partes: ["Bumbo (pedal)", "Caixa", "Chimbal (hi-hat, com pedal)", "Tons e surdo", "Pratos de ataque e de condução"], dicas: ["Comece com o groove de rock: chimbal em colcheias, caixa no 2 e no 4, bumbo no 1 e no 3", "Use o metrônomo sempre", "Estude rudimentos: toque simples, toque duplo e paradiddle"], first: [] },
+    voz: { d: "A voz é um instrumento: cantar afinado depende de ouvir bem e de controlar respiração e ressonância.", partes: ["Diafragma e respiração", "Pregas vocais", "Ressonadores (boca, nariz)"], dicas: ["Aqueça a voz antes de cantar", "Use o identificador de notas para conferir sua afinação", "Treine percepção de intervalos"], first: [] },
+    _wind: { d: "Instrumento de sopro: o som nasce da vibração do ar (palheta, bocal ou aresta). Saxofones, clarinete, trompete e trompa são transpositores: a nota escrita é diferente da nota real.",
+      partes: ["Bocal ou boquilha", "Corpo com chaves ou pistos", "Campana"], dicas: ["Respiração diafragmática e notas longas todos os dias", "Use o afinador: ele mostra a nota escrita para o seu instrumento", "Nas cifras, escolha seu instrumento para ver os acordes transpostos"], first: [] }
+  };
+})(window.OM);
+
 /* ===== js/ui/icons.js ===== */
 /* O Músico — ícones minimalistas (traço 1.8, 24×24) */
 (function (OM) {
@@ -3055,12 +3337,12 @@ E|-----------|-----------|-----------|-3---------|
     whites.forEach(function (m) {
       var on = hl.indexOf(m) >= 0, rt = on && o.roots && o.roots.indexOf(T.mod12(m)) >= 0;
       s.push('<rect data-m="' + m + '" class="wk' + (on ? " hl" : "") + (rt ? " rt" : "") + '" x="' + xOf[m] + '" y="0" width="' + ww + '" height="' + wh + '" rx="1.5"/>');
-      if (o.labels && (on || T.mod12(m) === 0)) s.push('<text class="kl" x="' + (xOf[m] + ww / 2) + '" y="' + (wh - 5) + '">' + T.display(T.name(m, o.flats)) + (T.mod12(m) === 0 && !on ? (Math.floor(m / 12) - 1) : "") + "</text>");
+      if (o.labels && (on || T.mod12(m) === 0 || o.labelsAll)) s.push('<text class="kl" x="' + (xOf[m] + ww / 2) + '" y="' + (wh - 5) + '">' + T.display(T.name(m, o.flats)) + (T.mod12(m) === 0 && !on ? (Math.floor(m / 12) - 1) : "") + "</text>");
     });
     blacks.forEach(function (m) {
       var x = xOf[m - 1] + ww - bw / 2, on = hl.indexOf(m) >= 0;
       s.push('<rect data-m="' + m + '" class="bk' + (on ? " hl" : "") + '" x="' + x + '" y="0" width="' + bw + '" height="' + bh + '" rx="1.2"/>');
-      if (o.labels && on) s.push('<text class="kl b" x="' + (x + bw / 2) + '" y="' + (bh - 5) + '" style="font-size:6px">' + T.display(T.name(m, o.flats)) + "</text>");
+      if (o.labels && (on || o.labelsAll)) s.push('<text class="kl b" x="' + (x + bw / 2) + '" y="' + (bh - 5) + '" style="font-size:6px">' + T.display(T.name(m, o.flats)) + "</text>");
     });
     s.push("</svg>");
     var el = OM.u.svg(s.join(""));
@@ -3396,6 +3678,231 @@ E|-----------|-----------|-----------|-3---------|
     suggestions: suggestions, bump: bump };
 })(window.OM);
 
+/* ===== js/core/transfer.js ===== */
+/* O Músico — importação e exportação de músicas em JSON e guia do formato para IAs.
+   Formato "omusico-cifras" (versão 1):
+   { "formato": "omusico-cifras", "versao": 1, "repertorio": "opcional", "musicas": [ { "titulo", "artista", "cifra", ... } ] }
+   Também aceita: uma música sozinha, uma lista de músicas e campos em inglês (title, artist, body…). */
+(function (OM) {
+  "use strict";
+  var L = OM.lib, T = OM.theory, u = OM.u;
+  var FORMAT = "omusico-cifras", VERSION = 1;
+
+  function pickField(o, names) {
+    for (var i = 0; i < names.length; i++) if (o[names[i]] != null && o[names[i]] !== "") return o[names[i]];
+    return null;
+  }
+  function str(v) {
+    if (v == null) return "";
+    if (Array.isArray(v)) return v.map(str).join("\n");
+    return String(v);
+  }
+  /* converte um objeto qualquer (pt/en) em música do app; lança erro descritivo */
+  function normalize(o) {
+    if (!o || typeof o !== "object" || Array.isArray(o)) throw new Error("item não é um objeto JSON");
+    var title = str(pickField(o, ["titulo", "título", "title", "nome", "name", "musica", "música"])).trim();
+    var body = pickField(o, ["cifra", "body", "chordpro", "letra", "conteudo", "conteúdo", "content", "lyrics", "chords", "texto", "text"]);
+    if (body && typeof body === "object" && !Array.isArray(body)) throw new Error("“cifra” deve ser texto ou lista de linhas");
+    body = str(body).replace(/\r/g, "").replace(/\t/g, "    ");
+    if (!title) {
+      var meta = OM.chordpro.parse(body).meta;
+      title = meta.title || "";
+    }
+    if (!title) throw new Error("falta o campo “titulo”");
+    if (!body.trim()) throw new Error("falta o campo “cifra” (letra com acordes)");
+    var parsed = OM.chordpro.parse(body), meta2 = parsed.meta;
+    var chords = OM.chordpro.chordsOf(parsed);
+    var key = str(pickField(o, ["tom", "key", "tonalidade"]) || meta2.key || "").trim();
+    if (key && !T.parseChord(key)) key = "";
+    var diff = +pickField(o, ["dificuldade", "difficulty", "nivel", "nível", "level"]) || 2;
+    var time = str(pickField(o, ["compasso", "time", "time_signature", "metrica"]) || meta2.time || "4/4").trim();
+    if (!/^\d{1,2}\/(2|4|8|16)$/.test(time)) time = "4/4";
+    var song = {
+      title: title.slice(0, 120),
+      artist: str(pickField(o, ["artista", "artist", "autor", "author", "compositor", "composer", "interprete", "intérprete"]) || meta2.artist || "Desconhecido").trim().slice(0, 120),
+      album: str(pickField(o, ["album", "álbum"]) || meta2.album || "").trim().slice(0, 120),
+      genre: str(pickField(o, ["genero", "gênero", "genre", "estilo", "style"]) || "").trim().slice(0, 40),
+      key: key || OM.chordpro.guessKey(body),
+      capo: Math.max(0, Math.min(11, +pickField(o, ["capotraste", "capo"]) || meta2.capo || 0)),
+      bpm: Math.max(0, Math.min(300, Math.round(+pickField(o, ["bpm", "andamento", "tempo"]) || meta2.bpm || 0))),
+      time: time,
+      difficulty: Math.max(1, Math.min(5, Math.round(diff))),
+      body: body
+    };
+    var mel = pickField(o, ["melodia", "melody", "partitura"]);
+    if (mel && typeof mel === "object") {
+      var notes = str(pickField(mel, ["notas", "notes"]));
+      if (notes && OM.staff.parseMelody(notes).filter(function (n) { return !n.bar; }).length) {
+        song.melody = { clef: /bass|fa|fá/i.test(str(pickField(mel, ["clave", "clef"]))) ? "bass" : "treble", key: str(pickField(mel, ["tom", "key"]) || song.key || "C").replace(/m$/, "") || "C",
+          time: str(pickField(mel, ["compasso", "time"]) || song.time), label: str(pickField(mel, ["rotulo", "rótulo", "label", "titulo"]) || "Melodia"), notes: notes };
+      }
+    }
+    var note = str(pickField(o, ["anotacoes", "anotações", "observacoes", "observações", "notas_pessoais", "comments"])).trim();
+    return { song: song, note: note, chordCount: chords.length };
+  }
+
+  /* lê o texto de um arquivo JSON -> {items:[{song, note}], errors:[{i, title, msg}], repertoire} */
+  function parse(text) {
+    var data;
+    try { data = JSON.parse(String(text).replace(/^﻿/, "")); }
+    catch (e) {
+      /* tolera blocos de código vindos de IAs (```json … ```) */
+      var m = /```(?:json)?\s*([\s\S]*?)```/.exec(String(text));
+      if (!m) throw new Error("O arquivo não é um JSON válido: " + e.message);
+      data = JSON.parse(m[1]);
+    }
+    if (data && data.app === "O Músico" && data.data) throw new Error("Este arquivo é um backup completo do app. Use Perfil › Configurações › Restaurar.");
+    var list, repertoire = null;
+    if (Array.isArray(data)) list = data;
+    else if (data && (Array.isArray(data.musicas) || Array.isArray(data.songs) || Array.isArray(data.músicas))) { list = data.musicas || data.músicas || data.songs; repertoire = data.repertorio || data.repertório || data.setlist || null; }
+    else if (data && typeof data === "object") list = [data];
+    else throw new Error("Formato não reconhecido");
+    var items = [], errors = [];
+    list.forEach(function (o, i) {
+      try { items.push(normalize(o)); }
+      catch (e) { errors.push({ i: i + 1, title: o && (o.titulo || o.title) || "", msg: e.message }); }
+    });
+    return { items: items, errors: errors, repertoire: repertoire ? String(repertoire).slice(0, 80) : null };
+  }
+
+  /* grava no app: atualiza cifra do usuário com mesmo título+artista ou cria nova */
+  function importItems(items, repertoireName) {
+    var created = 0, updated = 0, ids = [];
+    var mine = L.all().filter(function (s) { return s.user; });
+    items.forEach(function (it) {
+      var k = u.norm(it.song.title + "|" + it.song.artist);
+      var ex = mine.filter(function (s) { return u.norm(s.title + "|" + s.artist) === k; })[0];
+      var id;
+      if (ex) { id = ex.id; L.saveUserSong(Object.assign({}, ex, it.song, { id: id, updated: Date.now(), imported: true })); updated++; }
+      else { id = u.uid("u"); L.saveUserSong(Object.assign({ id: id, created: Date.now(), imported: true }, it.song)); created++; }
+      if (it.note) L.setNote(id, it.note);
+      ids.push(id);
+    });
+    var list = null;
+    if (repertoireName && ids.length) { list = L.createList(repertoireName); list.songs = ids.slice(); L.saveList(list); }
+    return { created: created, updated: updated, ids: ids, list: list };
+  }
+
+  /* ---------- exportação ---------- */
+  function songToJson(s) {
+    var o = { titulo: s.title, artista: s.artist };
+    if (s.album) o.album = s.album;
+    if (s.genre) o.genero = s.genre;
+    if (s.key) o.tom = s.key;
+    if (s.capo) o.capotraste = s.capo;
+    if (s.bpm) o.bpm = s.bpm;
+    if (s.time) o.compasso = s.time;
+    o.dificuldade = s.difficulty || 2;
+    o.cifra = s.body;
+    if (s.melody) o.melodia = { clave: s.melody.clef === "bass" ? "fa" : "sol", tom: s.melody.key, compasso: s.melody.time, rotulo: s.melody.label, notas: s.melody.notes };
+    var n = L.note(s.id); if (n) o.anotacoes = n;
+    return o;
+  }
+  function exportJson(ids, repertoire) {
+    var o = { formato: FORMAT, versao: VERSION, gerado_por: "O Músico", data: new Date().toISOString() };
+    if (repertoire) o.repertorio = repertoire;
+    o.musicas = ids.map(L.get).filter(Boolean).map(songToJson);
+    return JSON.stringify(o, null, 2);
+  }
+  function fileName(base) { return (u.norm(base || "musicas").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "musicas") + ".omusico.json"; }
+  function exportFile(ids, name, repertoire) {
+    if (!ids.length) { OM.ui.toast("Nenhuma música para exportar"); return; }
+    var blob = new Blob([exportJson(ids, repertoire)], { type: "application/json" });
+    OM.bridge.saveFile(fileName(name), "application/json", blob).then(function (p) { OM.ui.toast(p ? "Exportado para " + p : "Não foi possível salvar o arquivo", 3500); });
+  }
+
+  /* ---------- guia do formato para IAs ---------- */
+  function guide() {
+    var ex = ["amazing-grace", "ciranda"].map(L.get).filter(Boolean).map(songToJson);
+    return {
+      "guia": "O Músico — formato de importação de cifras (omusico-cifras v1)",
+      "para_quem": "Este arquivo explica a uma IA (ou a uma pessoa) como montar um arquivo JSON que o app O Músico importa. Envie este guia para a IA junto com o pedido.",
+      "instrucoes_para_ia": [
+        "Responda SOMENTE com um JSON válido (UTF-8), sem comentários e sem texto fora do JSON.",
+        "Use a estrutura de “estrutura_do_arquivo”: um objeto com \"formato\": \"omusico-cifras\", \"versao\": 1 e a lista \"musicas\".",
+        "Cada música precisa de \"titulo\" e \"cifra\". Os outros campos são opcionais, mas preencha tom, bpm e compasso quando souber.",
+        "No campo \"cifra\", escreva a letra com os acordes entre colchetes imediatamente antes da sílaba em que mudam (formato ChordPro), por exemplo: \"[G]Asa [D]branca\". Quebras de linha são \\n dentro da string, ou use uma lista de linhas.",
+        "Marque seções com {c: Nome da seção} (Intro, Verso, Refrão, Ponte, Solo, Final). Refrões podem ficar entre {soc} e {eoc}. Tablaturas ficam entre {sot} e {eot}.",
+        "Use só a notação de acordes listada em “notacao_de_acordes”. Não invente símbolos.",
+        "Se a música tiver direitos autorais, só inclua a letra se o usuário tiver o direito de usá-la (por exemplo, composição própria ou domínio público). Caso contrário, envie apenas a sequência de acordes por seção.",
+        "O tom deve ser o tom real da gravação ou da composição; se usar capotraste, informe \"capotraste\" e escreva os acordes no tom real (o app calcula as formas)."
+      ],
+      "estrutura_do_arquivo": {
+        "formato": "\"omusico-cifras\" (obrigatório para identificar o arquivo)",
+        "versao": "1",
+        "repertorio": "texto opcional — se presente, o app cria um repertório com todas as músicas importadas, na ordem do arquivo",
+        "musicas": "lista de objetos música (ver “campos_da_musica”). Também é aceito um único objeto música ou uma lista sem o envelope."
+      },
+      "campos_da_musica": {
+        "titulo": { "tipo": "texto", "obrigatorio": true, "exemplo": "Minha Canção" },
+        "artista": { "tipo": "texto", "obrigatorio": false, "exemplo": "Nome do artista ou compositor" },
+        "album": { "tipo": "texto", "obrigatorio": false },
+        "genero": { "tipo": "texto", "obrigatorio": false, "exemplo": "MPB, Rock, Sertanejo, Gospel, Samba…" },
+        "tom": { "tipo": "texto", "obrigatorio": false, "exemplo": "G, Am, Bb, F#m", "observacao": "Se ausente, o app estima o tom pelos acordes." },
+        "capotraste": { "tipo": "inteiro 0–11", "obrigatorio": false },
+        "bpm": { "tipo": "inteiro 20–300", "obrigatorio": false, "observacao": "Usado no metrônomo e no modo prática." },
+        "compasso": { "tipo": "texto", "obrigatorio": false, "valores": ["2/4", "3/4", "4/4", "5/4", "6/8", "7/8", "9/8", "12/8"], "padrao": "4/4" },
+        "dificuldade": { "tipo": "inteiro 1–5", "obrigatorio": false, "significado": "1 iniciante, 2 básico, 3 intermediário, 4 avançado, 5 profissional" },
+        "cifra": { "tipo": "texto (ou lista de linhas)", "obrigatorio": true, "observacao": "Letra com acordes em ChordPro, ou no formato de acordes em uma linha e letra na linha de baixo (o app converte sozinho)." },
+        "melodia": { "tipo": "objeto", "obrigatorio": false, "campos": { "clave": "\"sol\" ou \"fa\"", "tom": "armadura, ex.: \"G\"", "compasso": "\"4/4\"", "rotulo": "título exibido", "notas": "sequência de notas (ver “formato_da_melodia”)" } },
+        "anotacoes": { "tipo": "texto", "obrigatorio": false, "observacao": "Vira a anotação pessoal da música (dicas de batida, dedilhado, dinâmica)." }
+      },
+      "nomes_alternativos_aceitos": { "titulo": ["title", "nome"], "artista": ["artist", "autor", "compositor"], "cifra": ["body", "chordpro", "letra", "conteudo"], "tom": ["key"], "compasso": ["time"], "dificuldade": ["difficulty", "nivel"], "genero": ["genre", "estilo"] },
+      "formatos_de_cifra": {
+        "chordpro_recomendado": {
+          "acordes": "[C]Letra com [G]acordes — o acorde fica antes da sílaba onde muda",
+          "linha_so_de_acordes": "[C] | [G] | [Am] | [F] |",
+          "secao": "{c: Refrão}  ou uma linha só com [Refrão]",
+          "refrao": "{soc} … linhas do refrão … {eoc}",
+          "tablatura": "{sot}\ne|---0---3---|\nB|---1---0---|\n{eot}",
+          "metadados_opcionais_no_texto": "{title: …} {artist: …} {key: …} {tempo: …} {time: …} {capo: …}"
+        },
+        "acordes_sobre_a_letra": {
+          "descricao": "Uma linha só com acordes alinhados por espaços, seguida da linha da letra. O app detecta e converte.",
+          "exemplo": "G          D\nAsa branca no céu\nEm       C\nVoando pelo sertão"
+        }
+      },
+      "notacao_de_acordes": {
+        "fundamentais": "C D E F G A B, com # (sustenido) ou b (bemol): C#, Db, F#, Bb…",
+        "tipos_reconhecidos": {
+          "": "maior (C)", "m": "menor (Cm)", "7": "sétima dominante (C7)", "7M ou maj7": "sétima maior (C7M)", "m7": "menor com sétima (Cm7)",
+          "m7M": "menor com sétima maior", "° ou dim": "diminuto (C°)", "°7": "diminuto com sétima", "m7(b5)": "meio-diminuto",
+          "aug ou +": "aumentado (C+)", "sus2 / sus4 / 4": "suspensos (Csus4 = C4)", "7/4 ou 7sus4": "sétima com quarta",
+          "6, m6, 6(9)": "com sexta", "add9 ou (9)": "com nona adicionada", "9, 7(9), m7(9), 7M(9)": "com nona",
+          "7(b9), 7(#9), 7(13), 7(b13), 11, m7(11), 13": "outras tensões", "5": "power chord (C5)"
+        },
+        "inversoes": "Barra seguida da nota do baixo: C/E, D/F#, G/B",
+        "evitar": "Não use nomes por extenso (\"Dó maior\"), graus romanos ou símbolos fora desta lista dentro dos colchetes."
+      },
+      "formato_da_melodia": {
+        "descricao": "Notas separadas por espaço; \"|\" separa compassos. Cada nota = nome + oitava + duração. Pausa = R + duração.",
+        "duracoes": { "w": "semibreve (4 tempos)", "h": "mínima (2)", "q": "semínima (1)", "e": "colcheia (1/2)", "s": "semicolcheia (1/4)", ".": "depois da duração = pontuada (×1,5)" },
+        "oitavas": "C4 é o Dó central; A4 = Lá 440 Hz",
+        "exemplo": "E4q E4q F4q G4q | G4q F4q E4q D4q | C4q C4q D4q E4q | E4q. D4e D4h"
+      },
+      "exemplo_completo": { "formato": FORMAT, "versao": VERSION, "repertorio": "Exemplo de repertório", "musicas": ex },
+      "prompt_sugerido": "Usando o guia JSON em anexo do app O Músico, crie um arquivo no formato omusico-cifras com a música <NOME DA MÚSICA / sua composição>, com tom, bpm, compasso, seções marcadas e acordes em ChordPro. Responda apenas com o JSON.",
+      "como_importar": "No app: Cifras › botão Importar › Arquivo JSON (ou cole o JSON no campo de texto). O app mostra uma prévia e informa os erros de cada música."
+    };
+  }
+  function guideText() { return JSON.stringify(guide(), null, 2); }
+  function exportGuide() {
+    var blob = new Blob([guideText()], { type: "application/json" });
+    OM.bridge.saveFile("o-musico-guia-para-ia.json", "application/json", blob).then(function (p) { OM.ui.toast(p ? "Guia salvo em " + p : "Não foi possível salvar o arquivo", 3500); });
+  }
+  /* exemplo pronto (modelo para preencher) */
+  function exportTemplate() {
+    var o = { formato: FORMAT, versao: VERSION, repertorio: "Meu repertório", musicas: [{ titulo: "Nome da música", artista: "Artista", tom: "G", bpm: 90, compasso: "4/4", dificuldade: 2, genero: "Pop",
+      cifra: "{c: Intro}\n[G] | [D] | [Em] | [C] |\n\n{c: Verso}\n[G]Primeira linha da [D]letra\n[Em]Segunda linha da [C]letra\n\n{soc}\n[C]Refrão com [D]acordes [G]aqui\n{eoc}",
+      anotacoes: "Batida: baixo, cima-baixo, cima." }] };
+    var blob = new Blob([JSON.stringify(o, null, 2)], { type: "application/json" });
+    OM.bridge.saveFile("modelo.omusico.json", "application/json", blob).then(function (p) { OM.ui.toast(p ? "Modelo salvo em " + p : "Não foi possível salvar", 3500); });
+  }
+
+  OM.transfer = { FORMAT: FORMAT, parse: parse, normalize: normalize, importItems: importItems, exportJson: exportJson, exportFile: exportFile,
+    guide: guide, guideText: guideText, exportGuide: exportGuide, exportTemplate: exportTemplate, songToJson: songToJson };
+})(window.OM);
+
 /* ===== js/screens/home.js ===== */
 /* O Músico — Início */
 (function (OM) {
@@ -3462,6 +3969,19 @@ E|-----------|-----------|-----------|-3---------|
         tile("library", "Biblioteca", L.favs().length + " favoritas · " + L.lists().length + " repertórios", function () { OM.router.tab("biblioteca"); }),
         tile(OM.inst.icon(inst), "Instrumentos", inst.n, function () { OM.router.push("instruments"); }));
       main.appendChild(g);
+      var nx = OM.lessons.nextLesson();
+      main.appendChild(h("button.card", { style: { display: "flex", alignItems: "center", gap: "14px", width: "100%", textAlign: "left", marginTop: "10px", background: "var(--acc-soft)", borderColor: "var(--acc)" },
+        onclick: function () { if (nx) OM.router.push("lesson", { course: nx.course.id, id: nx.lesson.id }); else OM.router.push("learn"); } },
+        h("span.ti", { html: OM.icon("learn"), style: { width: "42px", height: "42px", borderRadius: "12px", display: "grid", placeItems: "center", background: "var(--acc)", color: "var(--acc-ink)", flex: "none" } }),
+        h("div", { style: { flex: 1, minWidth: 0 } }, h("b", { text: nx ? "Continue aprendendo" : "Aprender música", style: { display: "block" } }),
+          h("small.muted", { text: nx ? nx.course.n + " · " + nx.lesson.n : "Cursos concluídos! Explore exercícios, guias e o mapa do braço." })),
+        h("span", { html: OM.icon("chev"), style: { width: "20px", color: "var(--acc)" } })));
+      main.appendChild(h("div.chips", { style: { marginTop: "10px" } },
+        h("button.chip", { text: "Cursos", onclick: function () { OM.router.push("learn"); } }),
+        h("button.chip", { text: "Instrumentos", onclick: function () { OM.router.push("instguides"); } }),
+        h("button.chip", { text: "Mapa do braço", onclick: function () { OM.router.push("fretmap"); } }),
+        h("button.chip", { text: "Acordes", onclick: function () { OM.router.push("chords"); } }),
+        h("button.chip", { text: "Importar JSON", onclick: function () { OM.router.push("transfer"); } })));
 
       var rec = L.recent().slice(0, 10);
       if (rec.length) {
@@ -3504,7 +4024,7 @@ E|-----------|-----------|-----------|-3---------|
 
   OM.screen("cifras", function () {
     var content = h("div.content");
-    var bar = ui.topbar({ title: "Cifras", actions: [ui.ibtn("upload", importFile, "Importar arquivo"), ui.ibtn("plus", function () { OM.router.push("editor", {}); }, "Nova cifra")] });
+    var bar = ui.topbar({ title: "Cifras", actions: [ui.ibtn("upload", importMenu, "Importar"), ui.ibtn("plus", function () { OM.router.push("editor", {}); }, "Nova cifra")] });
     var el = h("section", bar, content);
     ui.scrollShadow(content, bar);
     var input = h("input", { type: "search", placeholder: "Música, artista, gênero ou trecho da letra", enterkeyhint: "search" });
@@ -3553,6 +4073,13 @@ E|-----------|-----------|-----------|-3---------|
           end: h("span", ui.diff(s.difficulty || 2)), onClick: function () { OM.router.push("song", { id: s.id }); } }));
       });
       listEl.appendChild(list);
+    }
+    function importMenu() {
+      ui.menu("Importar músicas", [
+        { icon: "upload", label: "Arquivo JSON (uma ou várias músicas)", sub: "Também aceita JSON gerado por IA", onClick: function () { OM.router.push("transfer"); } },
+        { icon: "notes", label: "Arquivo de texto / ChordPro", sub: "Abre no editor", onClick: importFile },
+        { icon: "share", label: "Guia JSON para IA", sub: "Exporte e peça para uma IA criar cifras", onClick: function () { OM.router.push("transfer"); } }
+      ]);
     }
     function importFile() {
       var f = h("input", { type: "file", accept: ".txt,.cho,.chordpro,.chopro,.pro,.crd,text/plain" });
@@ -3662,6 +4189,8 @@ E|-----------|-----------|-----------|-3---------|
     tbar.appendChild(h("div.grp", ui.ibtn("minus", function () { setFs(state.fs - 1); }, "Diminuir fonte"), h("span", { html: OM.icon("font"), style: { width: "20px", color: "var(--tx2)" } }), ui.ibtn("plus", function () { setFs(state.fs + 1); }, "Aumentar fonte")));
     tbar.appendChild(scrollBtn);
     tbar.appendChild(pracBtn);
+    var recTbBtn = tb("mic", "Gravar", toggleRec);
+    tbar.appendChild(recTbBtn);
     tbar.appendChild(metBtn);
     tbar.appendChild(capoBtn);
     tbar.appendChild(instBtn);
@@ -3776,6 +4305,15 @@ E|-----------|-----------|-----------|-3---------|
           }, "sm")), r.svg);
         extra.appendChild(card);
       }
+      extra.appendChild(ui.sec("Minhas gravações desta música"));
+      var recBox = h("div");
+      extra.appendChild(recBox);
+      OM.recording.forSong(song.id).then(function (list) {
+        if (!list.length) { recBox.appendChild(h("div.card", h("p.muted", { style: { fontSize: "14px" }, text: "Toque em “Gravar” na barra acima para gravar você tocando ou cantando enquanto lê a cifra." }))); return; }
+        var l = h("div.list");
+        list.forEach(function (r) { l.appendChild(OM.recording.item(r, renderExtra)); });
+        recBox.appendChild(l);
+      }).catch(function () { });
       extra.appendChild(ui.sec("Anotações"));
       var note = L.note(song.id);
       var nc = h("div.card", { style: { cursor: "pointer" }, onclick: editNote }, note ? h("p", { text: note, style: { whiteSpace: "pre-wrap", fontSize: "14px" } }) : h("p.muted", { text: "Toque para adicionar anotações pessoais (dedilhado, dinâmica, lembretes de ensaio…)." }));
@@ -3951,6 +4489,34 @@ E|-----------|-----------|-----------|-3---------|
     }
     content.addEventListener("click", function () { if (state.present) showPresBar(); });
 
+    /* ---------- gravação de áudio sobre a cifra ---------- */
+    var rec = null, recStarting = false, recPill = null, recTimer = 0;
+    function toggleRec() { if (rec) stopRec(); else startRec(); }
+    function startRec() {
+      if (recStarting) return; recStarting = true;
+      var lvl = h("i"), tm = h("b.num", { text: "0:00" });
+      OM.recording.start(function (pk) { lvl.style.transform = "scaleX(" + Math.max(0.05, pk) + ")"; }).then(function (c) {
+        recStarting = false; rec = c;
+        recTbBtn.classList.add("on"); recTbBtn.lastChild.textContent = "Parar";
+        recPill = h("div.recpill", h("span.rdot"), tm, h("span.rlvl", lvl), h("button", { html: OM.icon("stop"), "aria-label": "Parar gravação", onclick: function (e) { e.stopPropagation(); stopRec(); } }));
+        view.appendChild(recPill);
+        recTimer = setInterval(function () { tm.textContent = OM.u.fmtTime(c.elapsed()); }, 250);
+        if (OM.store.settings().keepAwake) OM.bridge.keepAwake(true);
+        ui.toast("Gravando… a cifra continua na tela");
+      }).catch(function (e) { recStarting = false; ui.toast(e && e.name === "Unsupported" ? e.message : OM.audio.micErrorText(e), 4000); });
+    }
+    function stopRec() {
+      if (!rec) return;
+      var c = rec; rec = null; clearInterval(recTimer);
+      if (recPill) { recPill.remove(); recPill = null; }
+      recTbBtn.classList.remove("on"); recTbBtn.lastChild.textContent = "Gravar";
+      c.stop().then(function (r) {
+        return OM.recording.save(r, { songId: song.id, songTitle: song.title, key: soundingKey(), bpm: OM.metro.S.running ? OM.metro.S.bpm : 0 });
+      }).then(function () { ui.toast("Gravação salva em “Minhas gravações desta música”"); renderExtra(); })
+        .catch(function (e) { ui.toast(e.message || "Não foi possível salvar"); });
+      if (!state.scrolling && !OM.metro.S.running) OM.bridge.keepAwake(false);
+    }
+
     /* ---------- menu ---------- */
     function moreMenu() {
       ui.menu(song.title, [
@@ -3958,6 +4524,7 @@ E|-----------|-----------|-----------|-3---------|
         { icon: "edit", label: song.user ? "Editar cifra" : "Editar (versão pessoal)", sub: song.user ? null : "O original continua disponível", onClick: function () { OM.router.push("editor", { id: song.id }); } },
         song.edited ? { icon: "reset", label: "Restaurar cifra original", onClick: function () { ui.confirm("Descartar suas alterações nesta cifra?", "Restaurar", true).then(function (ok) { if (ok) { L.revertEdit(song.id); OM.router.replace("song", { id: song.id }); } }); } } : null,
         { icon: "notes", label: "Anotações", onClick: editNote },
+        { icon: "download", label: "Exportar como arquivo JSON", sub: "Para backup, outro aparelho ou edição por IA", onClick: function () { OM.transfer.exportFile([song.id], song.title); } },
         { icon: "share", label: "Compartilhar cifra (texto)", onClick: function () { OM.bridge.share(song.title + " — " + song.artist + (soundingKey() ? "\nTom: " + soundingKey() : "") + "\n\n" + OM.chordpro.toPlain(parsed, tc)); } },
         { icon: "reset", label: "Voltar ao tom original", onClick: function () { setTr(0); } },
         song.user ? { icon: "trash", label: "Excluir cifra", danger: true, onClick: function () { ui.confirm("Excluir “" + song.title + "” definitivamente?", "Excluir", true).then(function (ok) { if (ok) { L.deleteUserSong(song.id); OM.router.back(); ui.toast("Cifra excluída"); } }); } } : null
@@ -3981,6 +4548,7 @@ E|-----------|-----------|-----------|-3---------|
       onShow: function () { state.inst = state.inst.id === OM.store.settings().instrument ? OM.inst.current() : state.inst; syncMet(); },
       onBack: function () { if (state.present) { setPresent(false); return true; } if (practice) { practice.stop(); return true; } return false; },
       destroy: function () {
+        stopRec();
         offMet(); stopScroll(); if (stopMelody) stopMelody();
         if (practice) practice.stop();
         var spent = (Date.now() - openedAt) / 60000;
@@ -4063,32 +4631,11 @@ E|-----------|-----------|-----------|-3---------|
       };
       f.click();
     }
-    function guessKey(body) {
-      var ch = OM.chordpro.chordsOf(OM.chordpro.parse(body));
-      if (!ch.length) return "";
-      /* pontua cada tonalidade pela presença dos acordes no campo harmônico; o último acorde pesa mais */
-      var best = "", bestSc = -1;
-      T.ROOTS.forEach(function (r) {
-        [["", [0, 2, 4, 5, 7, 9, 11], ["", "m", "m", "", "", "m", "°"]], ["m", [0, 2, 3, 5, 7, 8, 10], ["m", "°", "", "m", "m", "", ""]]].forEach(function (mode) {
-          var sc = 0, rp = T.pc(r);
-          ch.forEach(function (c, i) {
-            var p = T.parseChord(c); if (!p) return;
-            var deg = mode[1].indexOf(T.mod12(p.rootPc - rp));
-            var minor = /^m(?!aj)/.test(p.suffix) && !/^m7\(b5\)/.test(p.suffix);
-            if (deg >= 0) { var q = mode[2][deg]; sc += (q === "m") === minor ? 2 : 0.5; if (deg === 0) sc += 1.5; }
-            if (deg === 4 && mode[0] === "m" && !minor) sc += 1.5; /* V maior em menor harmônica */
-            if (i === 0 && deg === 0) sc += 1; if (i === ch.length - 1 && deg === 0) sc += 1;
-          });
-          if (sc > bestSc) { bestSc = sc; best = (T.keyUsesFlats(r + mode[0]) ? T.FLAT[rp] : T.SHARP[rp]) + mode[0]; }
-        });
-      });
-      return best;
-    }
     function collect() {
       var body = fBody.value.replace(/\r/g, "");
       return {
         title: fTitle.value.trim(), artist: fArtist.value.trim() || "Desconhecido", album: fAlbum.value.trim(), genre: fGenre.value.trim(),
-        key: fKey.value || guessKey(body), capo: +fCapo.value || 0, bpm: Math.max(0, Math.min(300, +fBpm.value || 0)) || 0, time: fTime.value,
+        key: fKey.value || OM.chordpro.guessKey(body), capo: +fCapo.value || 0, bpm: Math.max(0, Math.min(300, +fBpm.value || 0)) || 0, time: fTime.value,
         difficulty: +fDiff.value || 2, body: body
       };
     }
@@ -4139,6 +4686,7 @@ E|-----------|-----------|-----------|-3---------|
     { id: "metronome", n: "Metrônomo", d: "Compassos, acentos, subdivisões, tap tempo", icon: "metro" },
     { id: "chords", n: "Biblioteca de acordes", d: "Diagramas para cordas e teclado", icon: "grid" },
     { id: "chordgen", n: "Gerador de acordes", d: "Monte, ouça e identifique acordes", icon: "piano" },
+    { id: "fretmap", n: "Mapa do braço", d: "Notas, intervalos e escalas em todo o instrumento", icon: "guitar" },
     { id: "scales", n: "Gerador de escalas", d: "Escalas no braço e no teclado, campo harmônico", icon: "scale" },
     { id: "transposer", n: "Transpositor de tons", d: "Transponha cifras e calcule o capotraste", icon: "transpose" },
     { id: "noteid", n: "Identificador de notas", d: "Mostra a nota tocada ou cantada", icon: "target" },
@@ -4146,6 +4694,7 @@ E|-----------|-----------|-----------|-3---------|
     { id: "recorder", n: "Gravador de ideias", d: "Grave riffs e melodias no aparelho", icon: "mic" },
     { id: "ear", n: "Percepção auditiva", d: "Intervalos, acordes e notas de ouvido", icon: "ear" },
     { id: "grooves", n: "Bateria e grooves", d: "Ritmos para praticar com banda", icon: "drum" },
+    { id: "transfer", n: "Importar / exportar", d: "Músicas em JSON e guia para IA", icon: "upload" },
     { id: "dictionary", n: "Dicionário musical", d: "Termos e conceitos explicados", icon: "book" }
   ];
   OM.TOOLS = TOOLS;
@@ -4162,6 +4711,7 @@ E|-----------|-----------|-----------|-3---------|
     content.appendChild(g);
     content.appendChild(ui.sec("Aprendizagem"));
     content.appendChild(h("div.list", ui.item({ icon: "learn", iconCls: "acc", title: "Exercícios progressivos", sub: "Acordes, notas, escalas, ritmo, percepção e leitura", onClick: function () { OM.router.push("learn"); } }),
+      ui.item({ icon: "book", iconCls: "acc", title: "Conheça os instrumentos", sub: "Guias com partes, afinação e primeiros acordes", onClick: function () { OM.router.push("instguides"); } }),
       ui.item({ icon: OM.inst.icon(OM.inst.current()), iconCls: "acc", title: "Instrumentos e afinações", sub: OM.inst.current().n, onClick: function () { OM.router.push("instruments"); } })));
     return { el: el };
   });
@@ -4984,91 +5534,46 @@ E|-----------|-----------|-----------|-3---------|
     var el = h("section", bar, content);
     ui.scrollShadow(content, bar);
     var timeEl = h("div.rectime", { text: "0:00" }), wave = h("canvas.wave"), recBtn = h("button.recbtn", { "aria-label": "Gravar", onclick: toggle }, h("i"));
-    var listEl = h("div"), status = h("div"), withMet = false;
-    var mr = null, chunks = [], t0 = 0, timer = 0, raf = 0, an = null, src = null, peaks = [];
-    function supported() { return typeof MediaRecorder !== "undefined"; }
-    function mime() {
-      var c = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
-      for (var i = 0; i < c.length; i++) if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c[i])) return c[i];
-      return "";
-    }
+    var listEl = h("div"), status = h("div"), withMet = false, filter = "all";
+    var ctrl = null, starting = false, timer = 0, peaks = [];
     function drawWave() {
       var c = wave, w = c.clientWidth, ht = c.clientHeight, dpr = window.devicePixelRatio || 1;
+      if (!w) return;
       if (c.width !== w * dpr) { c.width = w * dpr; c.height = ht * dpr; }
       var g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, ht);
-      g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(mr ? "--bad" : "--tx3");
-      var n = Math.floor(w / 4);
-      var arr = peaks.slice(-n);
-      arr.forEach(function (p, i) { var bh = Math.max(2, p * ht * 0.9); g.fillRect(i * 4, (ht - bh) / 2, 2.5, bh); });
+      g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(ctrl ? "--bad" : "--tx3");
+      peaks.slice(-Math.floor(w / 4)).forEach(function (p, i) { var bh = Math.max(2, p * ht * 0.9); g.fillRect(i * 4, (ht - bh) / 2, 2.5, bh); });
     }
-    function toggle() { if (mr) stopRec(); else startRec(); }
+    function toggle() { if (ctrl) stopRec(); else startRec(); }
     function startRec() {
-      if (!supported()) { status.appendChild(ui.notice("Gravação não suportada neste WebView. Atualize o Android System WebView.", true)); return; }
-      OM.u.clear(status);
-      OM.audio.getMic().then(function (stream) {
-        var ctx = OM.audio.context();
-        src = ctx.createMediaStreamSource(stream); an = ctx.createAnalyser(); an.fftSize = 2048; src.connect(an);
-        var buf = new Float32Array(2048);
-        var m = mime();
-        try { mr = m ? new MediaRecorder(stream, { mimeType: m }) : new MediaRecorder(stream); } catch (e) { mr = new MediaRecorder(stream); }
-        chunks = []; peaks = [];
-        mr.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
-        mr.onstop = function () {
-          var dur = (Date.now() - t0) / 1000, type = mr.mimeType || m || "audio/webm";
-          var blob = new Blob(chunks, { type: type });
-          mr = null; recBtn.classList.remove("on"); clearInterval(timer); cancelAnimationFrame(raf);
-          try { src.disconnect(); } catch (e) { }
-          OM.audio.releaseMic();
-          if (withMet) OM.metro.stop();
-          drawWave();
-          if (dur < 0.5 || !blob.size) { ui.toast("Gravação muito curta"); return; }
-          var d = new Date();
-          var rec = { id: OM.u.uid("r"), name: "Ideia " + d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-            date: Date.now(), duration: dur, type: type, blob: blob, bpm: withMet ? OM.metro.S.bpm : 0 };
-          OM.store.rec.put(rec).then(function () { ui.toast("Gravação salva"); OM.lib.log({ type: "tool", icon: "mic", screen: "recorder", title: "Gravação: " + rec.name, minutes: Math.round(dur / 6) / 10 }); drawList(); })
-            .catch(function () { ui.toast("Não foi possível salvar a gravação"); });
-        };
-        mr.start(500);
-        t0 = Date.now(); recBtn.classList.add("on");
+      if (starting) return; starting = true;
+      OM.u.clear(status); peaks = [];
+      OM.recording.start(function (pk) { peaks.push(pk); if (peaks.length > 600) peaks.shift(); drawWave(); }).then(function (c) {
+        starting = false; ctrl = c; recBtn.classList.add("on");
         if (withMet) OM.metro.start();
-        timer = setInterval(function () { timeEl.textContent = OM.u.fmtTime((Date.now() - t0) / 1000); }, 250);
-        (function loop() {
-          raf = requestAnimationFrame(loop);
-          an.getFloatTimeDomainData(buf);
-          var pk = 0; for (var i = 0; i < buf.length; i++) pk = Math.max(pk, Math.abs(buf[i]));
-          peaks.push(Math.min(1, pk * 1.4));
-          if (peaks.length > 600) peaks.shift();
-          drawWave();
-        })();
-      }).catch(function (e) { status.appendChild(ui.notice(OM.audio.micErrorText(e), true)); });
+        timer = setInterval(function () { timeEl.textContent = OM.u.fmtTime(c.elapsed()); }, 250);
+      }).catch(function (e) { starting = false; status.appendChild(ui.notice(e && e.message && e.name === "Unsupported" ? e.message : OM.audio.micErrorText(e), true)); });
     }
-    function stopRec() { if (mr && mr.state !== "inactive") mr.stop(); }
+    function stopRec() {
+      if (!ctrl) return Promise.resolve();
+      var c = ctrl; ctrl = null; clearInterval(timer); recBtn.classList.remove("on");
+      if (withMet) OM.metro.stop();
+      return c.stop().then(function (r) {
+        drawWave();
+        return OM.recording.save(r, { bpm: withMet ? OM.metro.S.bpm : 0 }).then(function () { ui.toast("Gravação salva"); drawList(); });
+      }).catch(function (e) { ui.toast(e.message || "Não foi possível salvar"); });
+    }
     function drawList() {
       OM.store.rec.all().then(function (all) {
         OM.u.clear(listEl);
+        var list = filter === "songs" ? all.filter(function (r) { return r.songId; }) : filter === "ideas" ? all.filter(function (r) { return !r.songId; }) : all;
         listEl.appendChild(ui.sec("Minhas gravações (" + all.length + ")"));
-        if (!all.length) { listEl.appendChild(ui.empty("mic", "Grave riffs, melodias e ideias. Elas ficam guardadas só no aparelho.")); return; }
-        var l = h("div.list");
-        all.forEach(function (r) {
-          var it = ui.item({ icon: "wave", iconCls: "acc", title: r.name, sub: OM.u.fmtDate(r.date) + " · " + OM.u.fmtTime(r.duration) + (r.bpm ? " · " + r.bpm + " BPM" : ""), end: h("span", { html: OM.icon("more") }),
-            onClick: function () { open(r); } });
-          l.appendChild(it);
-        });
+        listEl.appendChild(ui.chips([{ v: "all", label: "Todas" }, { v: "ideas", label: "Ideias" }, { v: "songs", label: "Sobre cifras" }], filter, function (v) { filter = v; drawList(); }));
+        if (!list.length) { listEl.appendChild(ui.empty("mic", filter === "songs" ? "Grave tocando junto com uma cifra pelo botão “Gravar” na tela da música." : "Grave riffs, melodias e ideias. Elas ficam guardadas só no aparelho.")); return; }
+        var l = h("div.list", { style: { marginTop: "10px" } });
+        list.forEach(function (r) { l.appendChild(OM.recording.item(r, drawList)); });
         listEl.appendChild(l);
       }).catch(function () { OM.u.clear(listEl); listEl.appendChild(ui.notice("Armazenamento de gravações indisponível neste aparelho.", true)); });
-    }
-    function open(r) {
-      var url = URL.createObjectURL(r.blob);
-      var audio = h("audio", { controls: true, src: url });
-      var box = h("div", audio, h("div.btnrow", { style: { marginTop: "14px" } },
-        ui.btn("Renomear", "edit", function () { ui.prompt("Renomear gravação", "Nome", r.name).then(function (n) { if (!n) return; r.name = n; OM.store.rec.put(r).then(function () { s.close(); drawList(); }); }); }, "sm"),
-        ui.btn("Exportar", "download", function () {
-          var ext = /mp4/.test(r.type) ? "m4a" : /ogg/.test(r.type) ? "ogg" : "webm";
-          OM.bridge.saveFile(r.name.replace(/[^\w\- ]+/g, "_") + "." + ext, r.type.split(";")[0], r.blob).then(function (path) { ui.toast(path ? "Salvo em " + path : "Não foi possível exportar"); });
-        }, "sm"),
-        ui.btn("Excluir", "trash", function () { ui.confirm("Excluir “" + r.name + "”?", "Excluir", true).then(function (ok) { if (ok) OM.store.rec.del(r.id).then(function () { s.close(); drawList(); }); }); }, "sm danger")));
-      var s = ui.sheet({ title: r.name, content: box, onClose: function () { audio.pause(); URL.revokeObjectURL(url); } });
-      audio.play().catch(function () { });
     }
     content.appendChild(timeEl);
     content.appendChild(wave);
@@ -5078,7 +5583,7 @@ E|-----------|-----------|-----------|-3---------|
     content.appendChild(listEl);
     drawList();
     setTimeout(drawWave, 50);
-    return { el: el, onBack: function () { if (mr) { stopRec(); return true; } return false; }, destroy: function () { stopRec(); } };
+    return { el: el, onBack: function () { if (ctrl) { stopRec(); return true; } return false; }, destroy: function () { stopRec(); } };
   });
 })(window.OM);
 
@@ -5244,7 +5749,7 @@ E|-----------|-----------|-----------|-3---------|
       if (inst.kind === "wind") {
         content.appendChild(h("div.lbl", { text: "Transposição" }));
         var tr = inst.transp || 0;
-        content.appendChild(h("div.card", h("p", { text: tr % 12 ? "Nota escrita Dó soa " + T.display(T.name(60 + tr)) + ". Cifras, afinador e identificador mostram a nota escrita para este instrumento." : "Instrumento em Dó: a nota escrita é a nota real" + (tr ? " (uma oitava acima/abaixo)." : ".") }),
+        content.appendChild(h("div.card", h("p", { text: tr % 12 ? "Nota escrita Dó soa " + T.display(T.name(60 + tr, true)) + ". Cifras, afinador e identificador mostram a nota escrita para este instrumento." : "Instrumento em Dó: a nota escrita é a nota real" + (tr ? " (uma oitava acima/abaixo)." : ".") }),
           inst.range ? h("p.muted", { style: { marginTop: "6px", fontSize: "13px" }, text: "Extensão aproximada (som real): " + inst.range.join(" – ") }) : null));
       }
       if (inst.custom) content.appendChild(h("div.btnrow", { style: { marginTop: "16px" } },
@@ -5533,6 +6038,18 @@ E|-----------|-----------|-----------|-3---------|
         h("div.card.stat", h("b", { text: totalXp() }), h("span", { text: "pontos (XP)" })),
         h("div.card.stat", h("b", { text: ex.length }), h("span", { text: "sessões" })),
         h("div.card.stat", h("b", { text: OM.lib.streak() }), h("span", { text: "dias seguidos" }))));
+      content.appendChild(ui.sec("Cursos e guias"));
+      var cl = h("div.list");
+      OM.COURSES.forEach(function (c) {
+        var n = OM.lessons.courseProgress(c);
+        var it = ui.item({ icon: c.icon, iconCls: "acc", title: c.n, sub: n + " de " + c.lessons.length + " lições · " + c.d, onClick: function () { OM.router.push("course", { id: c.id }); } });
+        it.querySelector(".tx").appendChild(h("div.prog", { style: { marginTop: "6px" } }, h("i", { style: { width: Math.round(n / c.lessons.length * 100) + "%" } })));
+        cl.appendChild(it);
+      });
+      cl.appendChild(ui.item({ icon: OM.inst.icon(OM.inst.current()), iconCls: "acc", title: "Conheça os instrumentos", sub: "Partes, afinação, primeiros acordes e dicas", onClick: function () { OM.router.push("instguides"); } }));
+      cl.appendChild(ui.item({ icon: "guitar", iconCls: "acc", title: "Mapa do braço e do teclado", sub: "Notas, intervalos, escalas e acordes em todo o instrumento", onClick: function () { OM.router.push("fretmap"); } }));
+      content.appendChild(cl);
+      content.appendChild(ui.sec("Exercícios"));
       [["Teoria e leitura", ["chords", "fretnotes", "staff", "scales"]], ["Prática com o instrumento", ["playnote", "rhythm", "changes"]], ["Percepção musical", ["intervals", "chordear", "earnotes"]]].forEach(function (grp) {
         content.appendChild(ui.sec(grp[0]));
         var l = h("div.list");
@@ -5786,6 +6303,8 @@ E|-----------|-----------|-----------|-3---------|
         ls.forEach(function (x) { l.appendChild(ui.item({ icon: "list", iconCls: "acc", title: x.name, sub: x.songs.length + (x.songs.length === 1 ? " música" : " músicas"), onClick: function () { OM.router.push("list", { id: x.id }); } })); });
         content.appendChild(l);
       }
+      content.appendChild(ui.sec("Importar e exportar"));
+      content.appendChild(h("div.list", ui.item({ icon: "upload", iconCls: "acc", title: "Músicas em JSON", sub: "Importar arquivos, exportar cifras e guia para IA", onClick: function () { OM.router.push("transfer"); } })));
       content.appendChild(ui.sec("Gravações"));
       content.appendChild(h("div.list", ui.item({ icon: "mic", iconCls: "acc", title: "Gravador de ideias", sub: "Suas gravações guardadas no aparelho", onClick: function () { OM.router.push("recorder"); } })));
       content.appendChild(ui.sec("Recentes", "Ver todas", function () { OM.router.push("songlist", { kind: "recent" }); }));
@@ -5844,6 +6363,7 @@ E|-----------|-----------|-----------|-3---------|
       ui.menu(l.name, [
         { icon: "edit", label: "Renomear", onClick: function () { ui.prompt("Renomear repertório", "Nome", l.name).then(function (n) { if (n) { l.name = n; L.saveList(l); draw(); } }); } },
         { icon: "swap", label: editing ? "Concluir reorganização" : "Reorganizar / remover músicas", onClick: function () { editing = !editing; draw(); } },
+        { icon: "download", label: "Exportar repertório (JSON)", onClick: function () { OM.transfer.exportFile(l.songs, l.name, l.name); } },
         { icon: "share", label: "Compartilhar lista", onClick: function () { OM.bridge.share(l.name + "\n\n" + l.songs.map(function (id, i) { var s = L.get(id); return s ? (i + 1) + ". " + s.title + " — " + s.artist + (s.key ? " (" + s.key + ")" : "") : ""; }).filter(Boolean).join("\n")); } },
         { icon: "trash", label: "Excluir repertório", danger: true, onClick: function () { ui.confirm("Excluir “" + l.name + "”? As cifras não serão apagadas.", "Excluir", true).then(function (ok) { if (ok) { L.deleteList(l.id); OM.router.back(); } }); } }
       ]);
@@ -5991,6 +6511,7 @@ E|-----------|-----------|-----------|-3---------|
         }))));
       content.appendChild(h("div.lbl", { text: "Dados" }));
       content.appendChild(h("div.list",
+        ui.item({ icon: "upload", iconCls: "acc", title: "Importar / exportar músicas (JSON)", sub: "Inclui o guia do formato para IA", onClick: function () { OM.router.push("transfer"); } }),
         ui.item({ icon: "trash", title: "Limpar histórico de prática", onClick: function () { ui.confirm("Apagar todo o histórico e as estatísticas de prática?", "Apagar", true).then(function (ok) { if (ok) { S.set("history", []); S.set("practiceDays", {}); ui.toast("Histórico apagado"); } }); } }),
         ui.item({ icon: "trash", title: "Zerar progresso dos exercícios", onClick: function () { ui.confirm("Zerar níveis e pontuação de todos os exercícios?", "Zerar", true).then(function (ok) { if (ok) { S.set("ex", {}); ui.toast("Progresso zerado"); } }); } })));
       content.appendChild(h("div.lbl", { text: "Sobre" }));
@@ -5999,6 +6520,386 @@ E|-----------|-----------|-----------|-3---------|
       if (p.focus === "backup") setTimeout(function () { var b = content.querySelector("#backup"); if (b) b.scrollIntoView(); }, 50);
     }
     draw();
+    return { el: el };
+  });
+})(window.OM);
+
+/* ===== js/screens/lessons.js ===== */
+/* O Músico — cursos e lições, guias de instrumentos, mapa do braço e importação/exportação JSON */
+(function (OM) {
+  "use strict";
+  var h = OM.u.h, ui = OM.ui, T = OM.theory, L = OM.lib;
+
+  function done() { return OM.store.get("lessons", {}); }
+  function markDone(id) { OM.store.update("lessons", {}, function (m) { m[id] = Date.now(); }); }
+  function courseProgress(c) { var d = done(); return c.lessons.filter(function (l) { return d[l.id]; }).length; }
+  function nextLesson() {
+    var d = done();
+    for (var i = 0; i < OM.COURSES.length; i++) for (var j = 0; j < OM.COURSES[i].lessons.length; j++) {
+      var l = OM.COURSES[i].lessons[j]; if (!d[l.id]) return { course: OM.COURSES[i], lesson: l };
+    }
+    return null;
+  }
+  OM.lessons = { nextLesson: nextLesson, courseProgress: courseProgress };
+  function chordInst() { var i = OM.inst.current(); return i.kind === "string" || i.kind === "keys" ? i : OM.inst.get(i.kind === "bowed" ? "violao" : "piano"); }
+  function stringInst() { var i = OM.inst.current(); return OM.inst.hasStrings(i) ? i : OM.inst.get("violao"); }
+
+  /* ---------- curso ---------- */
+  OM.screen("course", function (p) {
+    var c = OM.COURSES.filter(function (x) { return x.id === p.id; })[0];
+    var content = h("div.content");
+    var bar = ui.topbar({ title: c.n, back: true });
+    var el = h("section", bar, content);
+    function draw() {
+      OM.u.clear(content);
+      var n = courseProgress(c), d = done();
+      content.appendChild(h("p.muted", { style: { fontSize: "14px", margin: "4px 0 10px" }, text: c.d }));
+      content.appendChild(h("div.card", h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: "13.5px", marginBottom: "6px" } }, h("span", { text: "Progresso" }), h("b", { text: n + " de " + c.lessons.length + " lições" })),
+        h("div.prog", h("i", { style: { width: n / c.lessons.length * 100 + "%" } }))));
+      var l = h("div.list", { style: { marginTop: "12px" } });
+      c.lessons.forEach(function (ls, i) {
+        l.appendChild(ui.item({ lead: h("span.keybadge", { text: d[ls.id] ? "✓" : i + 1, style: d[ls.id] ? { color: "var(--ok)" } : null }), title: ls.n, sub: d[ls.id] ? "Concluída" : "Lição " + (i + 1),
+          onClick: function () { OM.router.push("lesson", { course: c.id, id: ls.id }); } }));
+      });
+      content.appendChild(l);
+    }
+    return { el: el, onShow: draw };
+  });
+
+  /* ---------- lição ---------- */
+  function renderBlock(b, stops) {
+    var inst = chordInst();
+    switch (b.t) {
+      case "p": return h("p", { text: b.text, style: { margin: "10px 0", lineHeight: 1.6 } });
+      case "h": return h("div.lbl", { text: b.text });
+      case "tip": return h("div", { style: { margin: "12px 0" } }, ui.notice(b.text, false, "star"));
+      case "list": return h("ul", { style: { paddingLeft: "20px", margin: "10px 0", lineHeight: 1.6 } }, b.items.map(function (x) { return h("li", { text: x, style: { marginBottom: "4px" } }); }));
+      case "table": return h("div.card", { style: { margin: "10px 0", padding: "4px 14px" } }, b.rows.map(function (r) { return h("div.kv", h("b", { text: r[0], style: { textAlign: "left", color: "var(--chord)" } }), h("span", { text: r[1], style: { textAlign: "right" } })); }));
+      case "chords": {
+        var g = h("div.voicings", { style: { margin: "10px 0", gridTemplateColumns: "repeat(auto-fill,minmax(" + (inst.kind === "keys" ? 150 : b.big ? 130 : 96) + "px,1fr))" } });
+        b.names.forEach(function (n) {
+          var c = h("button.vc", { onclick: function () { ui.playChord(n, inst); } }, ui.chordView(n, inst, { size: inst.kind === "keys" ? 90 : b.big ? 120 : 84, max: 1, labels: !!b.big }));
+          c.appendChild(h("small", { text: "Toque para ouvir" }));
+          g.appendChild(c);
+        });
+        return h("div", g, h("p.dim", { style: { fontSize: "12px" }, text: "Diagramas para: " + inst.n + (inst.id !== OM.inst.current().id ? " (seu instrumento não usa diagramas de acordes)" : "") }));
+      }
+      case "piano": return h("div.card", { style: { padding: "10px", margin: "10px 0" } }, ui.piano({ from: b.from || 48, to: b.to || 71, hl: b.notes, roots: b.roots, labels: b.labels !== false, onKey: function (m) { OM.synth.piano(m); } }));
+      case "play": return h("div", { style: { margin: "8px 0" } }, ui.btn(b.label, "sound", function () {
+        if (b.chord) ui.playChord(b.chord, inst);
+        else OM.synth.sequence(b.seq, 0.42, inst.kind === "string" ? inst : OM.inst.get("piano"));
+      }, "sm"));
+      case "prog": {
+        var chipsEl = h("div.chips", b.chords.map(function (c) { return h("span.chip", { text: c }); }));
+        var btn = ui.btn(b.label, "play", function () {
+          var timers = stops.prog || [];
+          timers.forEach(clearTimeout);
+          stops.prog = b.chords.map(function (c, i) {
+            return setTimeout(function () {
+              [].forEach.call(chipsEl.children, function (x, k) { x.classList.toggle("on", k === i); });
+              ui.playChord(c, inst);
+            }, i * 1100);
+          });
+          stops.prog.push(setTimeout(function () { [].forEach.call(chipsEl.children, function (x) { x.classList.remove("on"); }); }, b.chords.length * 1100 + 200));
+        }, "sm");
+        return h("div", { style: { margin: "10px 0" } }, btn, h("div", { style: { marginTop: "8px" } }, chipsEl));
+      }
+      case "staff": {
+        var notes = OM.staff.parseMelody(b.notes), r = OM.staff.render({ clef: b.clef || "treble", key: b.key || "C", time: b.time, notes: notes, width: 340 });
+        return h("div.card", { style: { margin: "10px 0" } }, r.svg, h("div", { style: { marginTop: "8px" } }, ui.btn("Ouvir", "play", function () {
+          if (stops.staff) stops.staff();
+          stops.staff = OM.staff.play(r.notes, 80, function (i) { r.noteEls.forEach(function (n) { n && n.classList.remove("cur"); }); if (i >= 0 && r.noteEls[i]) r.noteEls[i].classList.add("cur"); }, OM.inst.get("piano"));
+        }, "sm")));
+      }
+      case "fret": {
+        var si = stringInst(), tm = OM.inst.tuningMidi(OM.inst.tuningOf(si));
+        return h("div", { style: { margin: "10px 0" } }, ui.fretboard({ tuning: tm, frets: b.frets || 12, marks: function (s, f) {
+          var n = T.name(tm[s] + f); return { label: T.display(n).replace("♯", "#"), on: n.length === 1, root: n === "C" };
+        }, onTap: function (s, f) { OM.synth.note(tm[s] + f, si); } }), h("p.dim", { style: { fontSize: "12px", marginTop: "4px" }, text: si.n + ": cada casa sobe um semitom. Toque para ouvir." }));
+      }
+      case "link": return h("div", { style: { margin: "8px 0" } }, ui.btn(b.label, "chev", function () { OM.router.push(b.screen, b.params || {}); }, "sm ghost"));
+    }
+    return null;
+  }
+  OM.screen("lesson", function (p) {
+    var c = OM.COURSES.filter(function (x) { return x.id === p.course; })[0];
+    var idx = c.lessons.findIndex(function (l) { return l.id === p.id; }), ls = c.lessons[idx];
+    var content = h("div.content"), stops = {};
+    var bar = ui.topbar({ title: ls.n, sub: c.n + " · Lição " + (idx + 1) + " de " + c.lessons.length, back: true });
+    var el = h("section", bar, content);
+    ui.scrollShadow(content, bar);
+    var t0 = Date.now();
+    ls.b.forEach(function (b) { var e = renderBlock(b, stops); if (e) content.appendChild(e); });
+    var nxt = c.lessons[idx + 1];
+    content.appendChild(h("div.btnrow", { style: { marginTop: "22px" } }, ui.btn(nxt ? "Concluir e ir para a próxima" : "Concluir curso", "check", function () {
+      var first = !done()[ls.id];
+      markDone(ls.id);
+      if (first) L.log({ type: "tool", icon: "learn", screen: "lesson", params: { course: c.id, id: ls.id }, title: "Lição: " + ls.n, detail: c.n, minutes: Math.round((Date.now() - t0) / 6000) / 10 });
+      if (nxt) OM.router.replace("lesson", { course: c.id, id: nxt.id });
+      else { ui.toast("Curso concluído! Parabéns."); OM.router.back(); }
+    }, "pri block")));
+    return { el: el, destroy: function () { (stops.prog || []).forEach(clearTimeout); if (stops.staff) stops.staff(); } };
+  });
+
+  /* ---------- guias de instrumentos ---------- */
+  OM.screen("instguides", function () {
+    var content = h("div.content");
+    var bar = ui.topbar({ title: "Conheça os instrumentos", back: true });
+    var el = h("section", bar, content);
+    ui.scrollShadow(content, bar);
+    content.appendChild(h("p.muted", { style: { fontSize: "13.5px", margin: "4px 0" }, text: "Partes, afinação, primeiros acordes, mapa do braço e dicas para começar." }));
+    OM.inst.GROUPS.forEach(function (g) {
+      content.appendChild(h("div.lbl", { text: g.n }));
+      var l = h("div.list");
+      g.ids.forEach(function (id) {
+        var i = OM.inst.get(id), t = OM.inst.tuningOf(i);
+        l.appendChild(ui.item({ icon: OM.inst.icon(i), iconCls: "acc", title: i.n, sub: t ? t.n : { keys: "Teclas", drums: "Percussão", wind: "Sopro", voice: "Voz" }[i.kind], onClick: function () { OM.router.push("instguide", { id: id }); } }));
+      });
+      content.appendChild(l);
+    });
+    return { el: el };
+  });
+  OM.screen("instguide", function (p) {
+    var inst = OM.inst.get(p.id);
+    var info = OM.INST_INFO[inst.id] || (inst.kind === "wind" ? OM.INST_INFO._wind : { d: "Instrumento personalizado.", partes: [], dicas: [], first: [] });
+    var content = h("div.content");
+    var bar = ui.topbar({ title: inst.n, sub: "Guia do instrumento", back: true });
+    var el = h("section", bar, content);
+    ui.scrollShadow(content, bar);
+    function draw() {
+      OM.u.clear(content);
+      var isMain = OM.store.settings().instrument === inst.id;
+      content.appendChild(h("div", { style: { display: "flex", gap: "14px", alignItems: "center", margin: "4px 0 6px" } }, h("div.avatar", { html: OM.icon(OM.inst.icon(inst)), style: { padding: "16px" } }),
+        h("div", { style: { flex: 1 } }, h("h2", { text: inst.n, style: { fontSize: "20px" } }), isMain ? h("span.badge.acc", { text: "Seu instrumento principal" }) : null)));
+      content.appendChild(h("p", { text: info.d, style: { lineHeight: 1.6, margin: "10px 0" } }));
+      if (!isMain) content.appendChild(h("div.btnrow", ui.btn("Usar como principal", "star", function () { OM.store.setSetting("instrument", inst.id); OM.router.refreshRoots(); ui.toast(inst.n + " é seu instrumento principal"); draw(); }, "pri sm")));
+      if (info.partes && info.partes.length) { content.appendChild(h("div.lbl", { text: "Partes" })); content.appendChild(h("ul", { style: { paddingLeft: "20px", lineHeight: 1.6 } }, info.partes.map(function (x) { return h("li", { text: x }); }))); }
+      if (inst.tunings) {
+        var t = OM.inst.tuningOf(inst), tm = OM.inst.tuningMidi(t);
+        content.appendChild(h("div.lbl", { text: "Afinação — " + t.n }));
+        content.appendChild(h("div.notes-row", tm.map(function (m, i) {
+          return h("span.notepill", { text: T.display(T.name(m)), onclick: function () { OM.synth.note(m, inst); } }, h("small", { text: (tm.length - i) + "ª · " + T.midiToFreq(m).toFixed(0) + " Hz" }));
+        })));
+        content.appendChild(h("div.btnrow", { style: { marginTop: "10px" } }, ui.btn("Afinar", "tuner", function () { OM.router.push("tuner", { inst: inst.id }); }, "sm"),
+          ui.btn("Mapa do braço", "guitar", function () { OM.router.push("fretmap", { inst: inst.id }); }, "sm"),
+          ui.btn("Outras afinações", "swap", function () { OM.router.push("instrument", { id: inst.id }); }, "sm ghost")));
+        content.appendChild(h("div.lbl", { text: "Notas naturais no braço" }));
+        content.appendChild(ui.fretboard({ tuning: tm, frets: 12, marks: function (s, f) { var n = T.name(tm[s] + f); return n.length === 1 ? { label: T.display(n).slice(0, 3), root: n === "C" } : null; }, onTap: function (s, f) { OM.synth.note(tm[s] + f, inst); } }));
+      }
+      if (inst.kind === "keys") {
+        content.appendChild(h("div.lbl", { text: "Localize as notas" }));
+        content.appendChild(h("div.card", { style: { padding: "10px" } }, ui.piano({ from: 48, to: 83, hl: [60], roots: [0], labels: true, labelsAll: true, onKey: function (m) { OM.synth.piano(m); } })));
+        content.appendChild(h("p.dim", { style: { fontSize: "12px", marginTop: "6px" }, text: "Destacado: Dó central (C4). Toque nas teclas para ouvir." }));
+        content.appendChild(h("div.btnrow", { style: { marginTop: "10px" } }, ui.btn("Mapa do teclado", "piano", function () { OM.router.push("fretmap", { inst: inst.id }); }, "sm")));
+      }
+      if (inst.kind === "wind") {
+        var tr = inst.transp || 0;
+        content.appendChild(h("div.lbl", { text: "Transposição" }));
+        content.appendChild(h("div.card", h("p", { text: tr % 12 ? "Quando você lê Dó, soa " + T.display(T.name(60 + tr, true)) + ". O app mostra cifras, afinador e notas já escritos para o seu instrumento." : "Instrumento em Dó: a nota escrita é a nota real" + (tr ? " (soa uma oitava acima)." : ".") }),
+          inst.range ? h("p.muted", { style: { marginTop: "6px", fontSize: "13px" }, text: "Extensão aproximada (som real): " + inst.range.join(" – ") }) : null));
+        content.appendChild(h("div.btnrow", { style: { marginTop: "10px" } }, ui.btn("Ouvir escala de Dó escrita", "sound", function () { OM.synth.sequence([60, 62, 64, 65, 67, 69, 71, 72].map(function (m) { return m + tr % 12; }), 0.4, OM.inst.get("piano")); }, "sm"),
+          ui.btn("Afinador", "tuner", function () { OM.router.push("tuner", { inst: inst.id }); }, "sm")));
+      }
+      if (inst.kind === "drums") {
+        content.appendChild(h("div.lbl", { text: "Ouça as peças" }));
+        content.appendChild(h("div.chips.wrap", OM.synth.DRUMS.map(function (d) { return h("button.chip", { text: d.n, onclick: function () { OM.synth.drum(d.id, OM.audio.context().currentTime + 0.01); } }); })));
+        content.appendChild(h("div.btnrow", { style: { marginTop: "12px" } }, ui.btn("Grooves para praticar", "drum", function () { OM.router.push("grooves"); }, "sm"), ui.btn("Metrônomo", "metro", function () { OM.router.push("metronome"); }, "sm")));
+      }
+      if (info.first && info.first.length && (inst.kind === "string" || inst.kind === "keys")) {
+        content.appendChild(h("div.lbl", { text: "Primeiros acordes" }));
+        var g = h("div.voicings", { style: { gridTemplateColumns: "repeat(auto-fill,minmax(" + (inst.kind === "keys" ? 150 : 96) + "px,1fr))" } });
+        info.first.forEach(function (n) { g.appendChild(h("button.vc", { onclick: function () { ui.playChord(n, inst); } }, ui.chordView(n, inst, { size: inst.kind === "keys" ? 90 : 84, max: 1 }))); });
+        content.appendChild(g);
+        content.appendChild(h("div.btnrow", { style: { marginTop: "10px" } }, ui.btn("Curso: aprender acordes", "learn", function () { OM.router.push("course", { id: "acordes" }); }, "sm ghost")));
+      }
+      if (info.dicas && info.dicas.length) { content.appendChild(h("div.lbl", { text: "Dicas para começar" })); content.appendChild(h("ul", { style: { paddingLeft: "20px", lineHeight: 1.6 } }, info.dicas.map(function (x) { return h("li", { text: x, style: { marginBottom: "4px" } }); }))); }
+    }
+    draw();
+    return { el: el };
+  });
+
+  /* ---------- mapa do braço / teclado ---------- */
+  OM.screen("fretmap", function (p) {
+    var inst = p.inst ? OM.inst.get(p.inst) : OM.inst.current();
+    if (!OM.inst.hasStrings(inst) && inst.kind !== "keys") inst = OM.inst.get("violao");
+    var mode = "all", root = "C", scaleId = "major", chordT = "", sel = null;
+    var content = h("div.content");
+    var bar = ui.topbar({ title: "Mapa do braço", back: true });
+    var el = h("section", bar, content);
+    ui.scrollShadow(content, bar);
+    var MODES = [{ v: "all", label: "Todas as notas" }, { v: "nat", label: "Naturais" }, { v: "note", label: "Encontrar nota" }, { v: "int", label: "Intervalos" }, { v: "scale", label: "Escala" }, { v: "chord", label: "Acorde" }];
+    function pickInst() {
+      var opts = OM.inst.all().filter(function (i) { return OM.inst.hasStrings(i) || i.kind === "keys"; }).map(function (i) { return { v: i.id, label: i.n, sub: i.kind === "keys" ? "Teclado" : OM.inst.tuningOf(i).n }; });
+      ui.pick("Instrumento", opts, inst.id).then(function (v) { if (v) { inst = OM.inst.get(v); sel = null; draw(); } });
+    }
+    function pickTuning() {
+      ui.pick("Afinação", inst.tunings.map(function (t) { return { v: t.id, label: t.n }; }), OM.inst.tuningOf(inst).id).then(function (v) { if (v) { OM.inst.setTuning(inst, v); sel = null; draw(); } });
+    }
+    function pcsSel() {
+      var rp = T.pc(root);
+      if (mode === "scale") return T.SCALES.filter(function (s) { return s.id === scaleId; })[0].i.map(function (i) { return T.mod12(rp + i); });
+      if (mode === "chord") return T.parseChord(root + chordT).pcs;
+      if (mode === "note") return [rp];
+      return null;
+    }
+    function label(m) {
+      var pc = T.mod12(m), rp = T.pc(root), fl = T.keyUsesFlats(root);
+      if (mode === "int" || mode === "chord") return T.SCALE_INT[T.mod12(pc - rp)];
+      return T.display(T.name(pc, fl)).replace("♯", "#").replace("♭", "b");
+    }
+    function mark(m) {
+      var pc = T.mod12(m), rp = T.pc(root), nat = T.name(pc).length === 1, set = pcsSel();
+      if (sel != null && m === sel) return { label: label(m), q: true, on: false };
+      if (mode === "all") return { label: label(m), on: nat, root: false };
+      if (mode === "nat") return nat ? { label: label(m), root: pc === 0 } : null;
+      if (mode === "int") return { label: label(m), root: pc === rp, on: true };
+      if (set && set.indexOf(pc) >= 0) return { label: label(m), root: pc === rp };
+      return null;
+    }
+    function draw() {
+      OM.u.clear(content);
+      var isKeys = inst.kind === "keys";
+      content.appendChild(h("div.btnrow", ui.btn(inst.n, OM.inst.icon(inst), pickInst, "sm ghost"), !isKeys ? ui.btn(OM.inst.tuningOf(inst).n, "swap", pickTuning, "sm ghost") : null));
+      content.appendChild(h("div", { style: { marginTop: "12px" } }, ui.chips(MODES, mode, function (v) { mode = v; draw(); })));
+      if (mode !== "all" && mode !== "nat") {
+        var kr = h("div.keyrow", { style: { marginTop: "10px" } });
+        T.ROOTS.forEach(function (r) { kr.appendChild(h("button" + (r === root ? ".on" : ""), { text: T.display(r), onclick: function () { root = r; draw(); } })); });
+        content.appendChild(kr);
+      }
+      if (mode === "scale") {
+        var ss = h("select.inp", { style: { marginTop: "10px" } }, T.SCALES.map(function (s) { return h("option", { value: s.id, text: s.n }); }));
+        ss.value = scaleId; ss.onchange = function () { scaleId = ss.value; draw(); };
+        content.appendChild(ss);
+      }
+      if (mode === "chord") {
+        var cs = h("select.inp", { style: { marginTop: "10px" } }, T.CHORD_TYPES.map(function (t) { return h("option", { value: t.id, text: root + t.id + " — " + t.n }); }));
+        cs.value = chordT; cs.onchange = function () { chordT = cs.value; draw(); };
+        content.appendChild(cs);
+      }
+      var desc = { all: "Todas as notas. As naturais aparecem em destaque.", nat: "Só as notas naturais (sem acidentes). O Dó aparece em laranja.", note: "Todas as posições de " + T.display(root) + " no instrumento.",
+        int: "Cada posição mostra o intervalo em relação a " + T.display(root) + ": T = tônica, 3M = terça maior, 5J = quinta justa…",
+        scale: "Notas da escala; a tônica em laranja.", chord: "Notas do acorde " + root + chordT + " (T, 3ª, 5ª, 7ª…) em todo o braço." }[mode];
+      content.appendChild(h("p.muted", { style: { fontSize: "13px", margin: "10px 0" }, text: desc + " Toque numa posição para ouvir; as notas de mesma altura (uníssonos) são marcadas." }));
+      var info = h("div.card", { style: { marginTop: "10px", minHeight: "56px" } });
+      function showInfo(m, where) {
+        if (m == null) { info.appendChild(h("p.dim", { style: { fontSize: "13px" }, text: "Toque numa nota do mapa." })); return; }
+        info.appendChild(h("div", { style: { display: "flex", alignItems: "baseline", gap: "10px" } }, h("b", { text: T.display(T.midiName(m, T.keyUsesFlats(root))), style: { fontSize: "24px", color: "var(--chord)" } }),
+          h("span.muted", { text: T.midiToFreq(m).toFixed(2) + " Hz" + (where ? " · " + where : "") })));
+      }
+      if (isKeys) {
+        var from = 48, to = 83, hl = [];
+        for (var m = from; m <= to; m++) { var mk = mark(m); if (mk && (mk.on !== false || mk.q) && mode !== "all") hl.push(m); }
+        if (sel != null && hl.indexOf(sel) < 0) hl.push(sel);
+        var rootsArr = mode === "all" || mode === "nat" ? [] : [T.pc(root)];
+        content.appendChild(h("div.card", { style: { padding: "10px", overflowX: "auto" } }, h("div", { style: { minWidth: "560px" } }, ui.piano({ from: from, to: to, hl: hl, roots: rootsArr, labels: true, labelsAll: mode === "all" || mode === "nat", flats: T.keyUsesFlats(root),
+          onKey: function (mm) { sel = mm; OM.synth.piano(mm); draw(); } }))));
+        content.appendChild(info);
+        showInfo(sel, sel != null ? "oitava " + (Math.floor(sel / 12) - 1) : "");
+        return;
+      }
+      var tm = OM.inst.tuningMidi(OM.inst.tuningOf(inst));
+      content.appendChild(ui.fretboard({ tuning: tm, frets: Math.min(24, inst.frets || 15), marks: function (s, f) { return mark(tm[s] + f); },
+        onTap: function (s, f) { sel = tm[s] + f; OM.synth.note(sel, inst); draw(); OM.u.clear(info); showInfo(sel, (tm.length - s) + "ª corda, " + (f ? f + "ª casa" : "solta")); } }));
+      if (inst.kind === "bowed") content.appendChild(h("p.dim", { style: { fontSize: "12px", marginTop: "4px" }, text: "Instrumento sem trastes: as linhas indicam as posições de cada semitom." }));
+      content.appendChild(info);
+      showInfo(sel, "");
+      if (sel != null) {
+        var pos = []; tm.forEach(function (o, s) { var f = sel - o; if (f >= 0 && f <= (inst.frets || 15)) pos.push((tm.length - s) + "ª corda casa " + f); });
+        info.appendChild(h("p.dim", { style: { fontSize: "12.5px", marginTop: "4px" }, text: "Mesma nota em: " + pos.join(" · ") }));
+      }
+    }
+    draw();
+    return { el: el };
+  });
+
+  /* ---------- importar / exportar músicas (JSON) e guia para IA ---------- */
+  OM.screen("transfer", function (p) {
+    var content = h("div.content");
+    var bar = ui.topbar({ title: "Importar e exportar músicas", back: true });
+    var el = h("section", bar, content);
+    ui.scrollShadow(content, bar);
+    var preview = h("div"), parsed = null, fileBase = "";
+    function readText(text, name) {
+      OM.u.clear(preview); parsed = null;
+      try { parsed = OM.transfer.parse(text); }
+      catch (e) { preview.appendChild(h("div", { style: { marginTop: "12px" } }, ui.notice(e.message, true))); return; }
+      fileBase = name || "";
+      showPreview();
+    }
+    function showPreview() {
+      OM.u.clear(preview);
+      var it = parsed.items;
+      preview.appendChild(h("div.lbl", { text: "Prévia: " + it.length + (it.length === 1 ? " música válida" : " músicas válidas") + (parsed.errors.length ? " · " + parsed.errors.length + " com erro" : "") }));
+      if (it.length) {
+        var l = h("div.list");
+        it.forEach(function (x) { l.appendChild(ui.item({ lead: h("span.keybadge", { text: x.song.key || "–" }), title: x.song.title, sub: x.song.artist + " · " + x.chordCount + " acordes" + (x.song.bpm ? " · " + x.song.bpm + " BPM" : "") + (x.song.melody ? " · partitura" : ""), end: null })); });
+        preview.appendChild(l);
+      }
+      parsed.errors.forEach(function (e) { preview.appendChild(h("div", { style: { marginTop: "8px" } }, ui.notice("Item " + e.i + (e.title ? " (" + e.title + ")" : "") + ": " + e.msg, true))); });
+      if (!it.length) return;
+      var mkList = !!parsed.repertoire || it.length > 1;
+      var nameInp = h("input.inp", { type: "text", value: parsed.repertoire || (fileBase ? fileBase : "Importadas " + new Date().toLocaleDateString("pt-BR")), maxlength: 80 });
+      var nameField = h("label.field", { style: { marginTop: "8px" } }, h("span", { text: "Nome do repertório" }), nameInp);
+      if (!mkList) nameField.classList.add("hidden");
+      preview.appendChild(h("div.card", { style: { marginTop: "12px", padding: "4px 14px 4px" } }, ui.row("Criar repertório com estas músicas", ui.toggle(mkList, function (v) { mkList = v; nameField.classList.toggle("hidden", !v); })), nameField));
+      preview.appendChild(h("div", { style: { marginTop: "12px" } }, ui.btn("Importar " + it.length + (it.length === 1 ? " música" : " músicas"), "download", function () {
+        var r = OM.transfer.importItems(it, mkList ? nameInp.value.trim() || "Importadas" : null);
+        ui.toast(r.created + " nova(s), " + r.updated + " atualizada(s)", 3000);
+        OM.u.clear(preview);
+        preview.appendChild(h("div", { style: { marginTop: "12px" } }, ui.notice("Importação concluída: " + r.created + " música(s) nova(s) e " + r.updated + " atualizada(s)." + (r.list ? " Repertório “" + r.list.name + "” criado." : ""), false, "check")));
+        var l2 = h("div.list", { style: { marginTop: "10px" } });
+        r.ids.forEach(function (id) { var s = L.get(id); if (s) l2.appendChild(OM.homeHelpers.songItem(s)); });
+        preview.appendChild(l2);
+        if (r.list) preview.appendChild(h("div.btnrow", { style: { marginTop: "10px" } }, ui.btn("Abrir repertório", "list", function () { OM.router.push("list", { id: r.list.id }); }, "sm")));
+        parsed = null;
+      }, "pri block")));
+    }
+    function chooseFile() {
+      var f = h("input", { type: "file", accept: ".json,application/json,text/plain" });
+      f.onchange = function () {
+        var file = f.files[0]; if (!file) return;
+        var r = new FileReader();
+        r.onload = function () { readText(String(r.result), file.name.replace(/\.omusico\.json$|\.json$/i, "")); };
+        r.readAsText(file);
+      };
+      f.click();
+    }
+    var paste = h("textarea.inp.code", { spellcheck: "false", placeholder: "Cole aqui o JSON (por exemplo, a resposta de uma IA)…", style: { minHeight: "120px" } });
+
+    content.appendChild(h("div.lbl", { text: "Importar" }));
+    content.appendChild(h("p.muted", { style: { fontSize: "13.5px", marginBottom: "10px" }, text: "Traga músicas prontas de um arquivo JSON: uma música ou várias, de outro aparelho, de um amigo ou geradas por uma IA a partir do guia abaixo." }));
+    content.appendChild(h("div.btnrow", ui.btn("Escolher arquivo JSON", "upload", chooseFile, "pri"), ui.btn("Arquivo de texto / ChordPro", "notes", function () {
+      var f = h("input", { type: "file", accept: ".txt,.cho,.chordpro,.chopro,.pro,.crd,text/plain" });
+      f.onchange = function () { var file = f.files[0]; if (!file) return; var r = new FileReader(); r.onload = function () { OM.router.push("editor", { importText: String(r.result), fileName: file.name.replace(/\.[^.]+$/, "") }); }; r.readAsText(file); };
+      f.click();
+    }, "ghost")));
+    content.appendChild(h("div", { style: { marginTop: "12px" } }, paste));
+    content.appendChild(h("div.btnrow", { style: { marginTop: "8px" } }, ui.btn("Ler JSON colado", "check", function () { if (!paste.value.trim()) { ui.toast("Cole o JSON primeiro"); return; } readText(paste.value, ""); }, "sm")));
+    content.appendChild(preview);
+
+    content.appendChild(h("div.lbl", { text: "Criar músicas com uma IA" }));
+    content.appendChild(h("div.card",
+      h("p", { style: { fontSize: "14px", lineHeight: 1.55 }, text: "O app gera um guia em JSON que explica a uma IA (ChatGPT, Claude, Gemini…) como montar cifras no formato que ele importa: campos, notação de acordes, seções, tablaturas, partitura e um exemplo completo." }),
+      h("ol", { style: { paddingLeft: "20px", fontSize: "13.5px", color: "var(--tx2)", lineHeight: 1.6, margin: "10px 0" } },
+        h("li", { text: "Exporte ou copie o guia." }), h("li", { text: "Envie o guia à IA e peça a música (use o prompt sugerido)." }), h("li", { text: "Salve a resposta como .json ou cole-a no campo acima e importe." })),
+      h("div.btnrow", ui.btn("Exportar guia (.json)", "download", OM.transfer.exportGuide, "pri sm"), ui.btn("Copiar / compartilhar", "share", function () { OM.bridge.share(OM.transfer.guideText()); }, "sm")),
+      h("div.btnrow", { style: { marginTop: "8px" } }, ui.btn("Ver guia", "eye", function () {
+        ui.sheet({ title: "Guia para IA", content: h("pre.out", { text: OM.transfer.guideText(), style: { fontSize: "11.5px", maxHeight: "60vh", overflow: "auto" } }) });
+      }, "sm ghost"), ui.btn("Baixar modelo vazio", "notes", OM.transfer.exportTemplate, "sm ghost"))));
+    var prompt = OM.transfer.guide().prompt_sugerido;
+    content.appendChild(h("div.card", { style: { marginTop: "10px" } }, h("h3", { text: "Prompt sugerido" }), h("p.out", { text: prompt, style: { fontSize: "13px" } }),
+      h("div.btnrow", { style: { marginTop: "8px" } }, ui.btn("Copiar prompt + guia", "copy", function () { OM.bridge.share(prompt + "\n\n" + OM.transfer.guideText()); }, "sm"))));
+
+    content.appendChild(h("div.lbl", { text: "Exportar" }));
+    var exl = h("div.list");
+    var mine = L.all().filter(function (s) { return s.user || s.edited; }).map(function (s) { return s.id; });
+    exl.appendChild(ui.item({ icon: "edit", iconCls: "acc", title: "Minhas cifras", sub: mine.length + " músicas (criadas, importadas e editadas)", onClick: function () { OM.transfer.exportFile(mine, "minhas-cifras"); } }));
+    exl.appendChild(ui.item({ icon: "heart", iconCls: "acc", title: "Favoritas", sub: L.favs().length + " músicas", onClick: function () { OM.transfer.exportFile(L.favs().filter(L.get), "favoritas"); } }));
+    exl.appendChild(ui.item({ icon: "cifras", iconCls: "acc", title: "Todo o acervo", sub: L.all().length + " músicas", onClick: function () { OM.transfer.exportFile(L.all().map(function (s) { return s.id; }), "acervo-o-musico"); } }));
+    L.lists().forEach(function (l) { exl.appendChild(ui.item({ icon: "list", iconCls: "acc", title: "Repertório: " + l.name, sub: l.songs.length + " músicas", onClick: function () { OM.transfer.exportFile(l.songs, l.name, l.name); } })); });
+    content.appendChild(exl);
+    content.appendChild(h("p.dim", { style: { fontSize: "12px", marginTop: "8px" }, text: "Arquivos salvos em Downloads/O Musico. Use-os para levar músicas a outro aparelho ou pedir a uma IA que revise, transponha ou complete as cifras." }));
+    if (p.text) readText(p.text, p.name || "");
     return { el: el };
   });
 })(window.OM);

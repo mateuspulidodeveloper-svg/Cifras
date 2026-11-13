@@ -7,6 +7,7 @@
     { id: "metronome", n: "Metrônomo", d: "Compassos, acentos, subdivisões, tap tempo", icon: "metro" },
     { id: "chords", n: "Biblioteca de acordes", d: "Diagramas para cordas e teclado", icon: "grid" },
     { id: "chordgen", n: "Gerador de acordes", d: "Monte, ouça e identifique acordes", icon: "piano" },
+    { id: "fretmap", n: "Mapa do braço", d: "Notas, intervalos e escalas em todo o instrumento", icon: "guitar" },
     { id: "scales", n: "Gerador de escalas", d: "Escalas no braço e no teclado, campo harmônico", icon: "scale" },
     { id: "transposer", n: "Transpositor de tons", d: "Transponha cifras e calcule o capotraste", icon: "transpose" },
     { id: "noteid", n: "Identificador de notas", d: "Mostra a nota tocada ou cantada", icon: "target" },
@@ -14,6 +15,7 @@
     { id: "recorder", n: "Gravador de ideias", d: "Grave riffs e melodias no aparelho", icon: "mic" },
     { id: "ear", n: "Percepção auditiva", d: "Intervalos, acordes e notas de ouvido", icon: "ear" },
     { id: "grooves", n: "Bateria e grooves", d: "Ritmos para praticar com banda", icon: "drum" },
+    { id: "transfer", n: "Importar / exportar", d: "Músicas em JSON e guia para IA", icon: "upload" },
     { id: "dictionary", n: "Dicionário musical", d: "Termos e conceitos explicados", icon: "book" }
   ];
   OM.TOOLS = TOOLS;
@@ -30,6 +32,7 @@
     content.appendChild(g);
     content.appendChild(ui.sec("Aprendizagem"));
     content.appendChild(h("div.list", ui.item({ icon: "learn", iconCls: "acc", title: "Exercícios progressivos", sub: "Acordes, notas, escalas, ritmo, percepção e leitura", onClick: function () { OM.router.push("learn"); } }),
+      ui.item({ icon: "book", iconCls: "acc", title: "Conheça os instrumentos", sub: "Guias com partes, afinação e primeiros acordes", onClick: function () { OM.router.push("instguides"); } }),
       ui.item({ icon: OM.inst.icon(OM.inst.current()), iconCls: "acc", title: "Instrumentos e afinações", sub: OM.inst.current().n, onClick: function () { OM.router.push("instruments"); } })));
     return { el: el };
   });

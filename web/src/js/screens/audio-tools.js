@@ -181,91 +181,46 @@
     var el = h("section", bar, content);
     ui.scrollShadow(content, bar);
     var timeEl = h("div.rectime", { text: "0:00" }), wave = h("canvas.wave"), recBtn = h("button.recbtn", { "aria-label": "Gravar", onclick: toggle }, h("i"));
-    var listEl = h("div"), status = h("div"), withMet = false;
-    var mr = null, chunks = [], t0 = 0, timer = 0, raf = 0, an = null, src = null, peaks = [];
-    function supported() { return typeof MediaRecorder !== "undefined"; }
-    function mime() {
-      var c = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
-      for (var i = 0; i < c.length; i++) if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c[i])) return c[i];
-      return "";
-    }
+    var listEl = h("div"), status = h("div"), withMet = false, filter = "all";
+    var ctrl = null, starting = false, timer = 0, peaks = [];
     function drawWave() {
       var c = wave, w = c.clientWidth, ht = c.clientHeight, dpr = window.devicePixelRatio || 1;
+      if (!w) return;
       if (c.width !== w * dpr) { c.width = w * dpr; c.height = ht * dpr; }
       var g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, ht);
-      g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(mr ? "--bad" : "--tx3");
-      var n = Math.floor(w / 4);
-      var arr = peaks.slice(-n);
-      arr.forEach(function (p, i) { var bh = Math.max(2, p * ht * 0.9); g.fillRect(i * 4, (ht - bh) / 2, 2.5, bh); });
+      g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(ctrl ? "--bad" : "--tx3");
+      peaks.slice(-Math.floor(w / 4)).forEach(function (p, i) { var bh = Math.max(2, p * ht * 0.9); g.fillRect(i * 4, (ht - bh) / 2, 2.5, bh); });
     }
-    function toggle() { if (mr) stopRec(); else startRec(); }
+    function toggle() { if (ctrl) stopRec(); else startRec(); }
     function startRec() {
-      if (!supported()) { status.appendChild(ui.notice("Gravação não suportada neste WebView. Atualize o Android System WebView.", true)); return; }
-      OM.u.clear(status);
-      OM.audio.getMic().then(function (stream) {
-        var ctx = OM.audio.context();
-        src = ctx.createMediaStreamSource(stream); an = ctx.createAnalyser(); an.fftSize = 2048; src.connect(an);
-        var buf = new Float32Array(2048);
-        var m = mime();
-        try { mr = m ? new MediaRecorder(stream, { mimeType: m }) : new MediaRecorder(stream); } catch (e) { mr = new MediaRecorder(stream); }
-        chunks = []; peaks = [];
-        mr.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
-        mr.onstop = function () {
-          var dur = (Date.now() - t0) / 1000, type = mr.mimeType || m || "audio/webm";
-          var blob = new Blob(chunks, { type: type });
-          mr = null; recBtn.classList.remove("on"); clearInterval(timer); cancelAnimationFrame(raf);
-          try { src.disconnect(); } catch (e) { }
-          OM.audio.releaseMic();
-          if (withMet) OM.metro.stop();
-          drawWave();
-          if (dur < 0.5 || !blob.size) { ui.toast("Gravação muito curta"); return; }
-          var d = new Date();
-          var rec = { id: OM.u.uid("r"), name: "Ideia " + d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-            date: Date.now(), duration: dur, type: type, blob: blob, bpm: withMet ? OM.metro.S.bpm : 0 };
-          OM.store.rec.put(rec).then(function () { ui.toast("Gravação salva"); OM.lib.log({ type: "tool", icon: "mic", screen: "recorder", title: "Gravação: " + rec.name, minutes: Math.round(dur / 6) / 10 }); drawList(); })
-            .catch(function () { ui.toast("Não foi possível salvar a gravação"); });
-        };
-        mr.start(500);
-        t0 = Date.now(); recBtn.classList.add("on");
+      if (starting) return; starting = true;
+      OM.u.clear(status); peaks = [];
+      OM.recording.start(function (pk) { peaks.push(pk); if (peaks.length > 600) peaks.shift(); drawWave(); }).then(function (c) {
+        starting = false; ctrl = c; recBtn.classList.add("on");
         if (withMet) OM.metro.start();
-        timer = setInterval(function () { timeEl.textContent = OM.u.fmtTime((Date.now() - t0) / 1000); }, 250);
-        (function loop() {
-          raf = requestAnimationFrame(loop);
-          an.getFloatTimeDomainData(buf);
-          var pk = 0; for (var i = 0; i < buf.length; i++) pk = Math.max(pk, Math.abs(buf[i]));
-          peaks.push(Math.min(1, pk * 1.4));
-          if (peaks.length > 600) peaks.shift();
-          drawWave();
-        })();
-      }).catch(function (e) { status.appendChild(ui.notice(OM.audio.micErrorText(e), true)); });
+        timer = setInterval(function () { timeEl.textContent = OM.u.fmtTime(c.elapsed()); }, 250);
+      }).catch(function (e) { starting = false; status.appendChild(ui.notice(e && e.message && e.name === "Unsupported" ? e.message : OM.audio.micErrorText(e), true)); });
     }
-    function stopRec() { if (mr && mr.state !== "inactive") mr.stop(); }
+    function stopRec() {
+      if (!ctrl) return Promise.resolve();
+      var c = ctrl; ctrl = null; clearInterval(timer); recBtn.classList.remove("on");
+      if (withMet) OM.metro.stop();
+      return c.stop().then(function (r) {
+        drawWave();
+        return OM.recording.save(r, { bpm: withMet ? OM.metro.S.bpm : 0 }).then(function () { ui.toast("Gravação salva"); drawList(); });
+      }).catch(function (e) { ui.toast(e.message || "Não foi possível salvar"); });
+    }
     function drawList() {
       OM.store.rec.all().then(function (all) {
         OM.u.clear(listEl);
+        var list = filter === "songs" ? all.filter(function (r) { return r.songId; }) : filter === "ideas" ? all.filter(function (r) { return !r.songId; }) : all;
         listEl.appendChild(ui.sec("Minhas gravações (" + all.length + ")"));
-        if (!all.length) { listEl.appendChild(ui.empty("mic", "Grave riffs, melodias e ideias. Elas ficam guardadas só no aparelho.")); return; }
-        var l = h("div.list");
-        all.forEach(function (r) {
-          var it = ui.item({ icon: "wave", iconCls: "acc", title: r.name, sub: OM.u.fmtDate(r.date) + " · " + OM.u.fmtTime(r.duration) + (r.bpm ? " · " + r.bpm + " BPM" : ""), end: h("span", { html: OM.icon("more") }),
-            onClick: function () { open(r); } });
-          l.appendChild(it);
-        });
+        listEl.appendChild(ui.chips([{ v: "all", label: "Todas" }, { v: "ideas", label: "Ideias" }, { v: "songs", label: "Sobre cifras" }], filter, function (v) { filter = v; drawList(); }));
+        if (!list.length) { listEl.appendChild(ui.empty("mic", filter === "songs" ? "Grave tocando junto com uma cifra pelo botão “Gravar” na tela da música." : "Grave riffs, melodias e ideias. Elas ficam guardadas só no aparelho.")); return; }
+        var l = h("div.list", { style: { marginTop: "10px" } });
+        list.forEach(function (r) { l.appendChild(OM.recording.item(r, drawList)); });
         listEl.appendChild(l);
       }).catch(function () { OM.u.clear(listEl); listEl.appendChild(ui.notice("Armazenamento de gravações indisponível neste aparelho.", true)); });
-    }
-    function open(r) {
-      var url = URL.createObjectURL(r.blob);
-      var audio = h("audio", { controls: true, src: url });
-      var box = h("div", audio, h("div.btnrow", { style: { marginTop: "14px" } },
-        ui.btn("Renomear", "edit", function () { ui.prompt("Renomear gravação", "Nome", r.name).then(function (n) { if (!n) return; r.name = n; OM.store.rec.put(r).then(function () { s.close(); drawList(); }); }); }, "sm"),
-        ui.btn("Exportar", "download", function () {
-          var ext = /mp4/.test(r.type) ? "m4a" : /ogg/.test(r.type) ? "ogg" : "webm";
-          OM.bridge.saveFile(r.name.replace(/[^\w\- ]+/g, "_") + "." + ext, r.type.split(";")[0], r.blob).then(function (path) { ui.toast(path ? "Salvo em " + path : "Não foi possível exportar"); });
-        }, "sm"),
-        ui.btn("Excluir", "trash", function () { ui.confirm("Excluir “" + r.name + "”?", "Excluir", true).then(function (ok) { if (ok) OM.store.rec.del(r.id).then(function () { s.close(); drawList(); }); }); }, "sm danger")));
-      var s = ui.sheet({ title: r.name, content: box, onClose: function () { audio.pause(); URL.revokeObjectURL(url); } });
-      audio.play().catch(function () { });
     }
     content.appendChild(timeEl);
     content.appendChild(wave);
@@ -275,6 +230,6 @@
     content.appendChild(listEl);
     drawList();
     setTimeout(drawWave, 50);
-    return { el: el, onBack: function () { if (mr) { stopRec(); return true; } return false; }, destroy: function () { stopRec(); } };
+    return { el: el, onBack: function () { if (ctrl) { stopRec(); return true; } return false; }, destroy: function () { stopRec(); } };
   });
 })(window.OM);
