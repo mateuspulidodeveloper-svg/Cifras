@@ -5,9 +5,9 @@
   var TABS = [
     { id: "inicio", n: "Início", icon: "home" },
     { id: "cifras", n: "Cifras", icon: "cifras" },
+    { id: "aprender", n: "Aprender", icon: "learn" },
     { id: "ferramentas", n: "Ferramentas", icon: "tools" },
-    { id: "biblioteca", n: "Biblioteca", icon: "library" },
-    { id: "perfil", n: "Perfil", icon: "user" }
+    { id: "biblioteca", n: "Biblioteca", icon: "library" }
   ];
   var screens = {};
   var roots = {}, stack = [], current = null;

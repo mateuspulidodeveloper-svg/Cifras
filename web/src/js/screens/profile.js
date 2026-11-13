@@ -14,7 +14,7 @@
 
   OM.screen("perfil", function () {
     var content = h("div.content");
-    var bar = ui.topbar({ title: "Perfil", actions: [ui.ibtn("settings", function () { OM.router.push("settings"); }, "Configurações")] });
+    var bar = ui.topbar({ title: "Perfil", back: true, actions: [ui.ibtn("settings", function () { OM.router.push("settings"); }, "Configurações")] });
     var el = h("section", bar, content);
     ui.scrollShadow(content, bar);
     function draw() {
@@ -46,7 +46,7 @@
       content.appendChild(pl);
       content.appendChild(ui.sec("Atalhos"));
       content.appendChild(h("div.list",
-        ui.item({ icon: OM.inst.icon(inst), iconCls: "acc", title: "Instrumento principal", sub: inst.n, onClick: function () { OM.router.push("instruments"); } }),
+        ui.item({ icon: OM.inst.icon(inst), iconCls: "acc", title: "Meus instrumentos", sub: OM.inst.mine().map(function (i) { return i.n; }).join(", ") + " · principal: " + inst.n, onClick: function () { OM.router.push("myinst"); } }),
         ui.item({ icon: "history", iconCls: "acc", title: "Histórico de prática", onClick: function () { OM.router.push("history"); } }),
         ui.item({ icon: "settings", iconCls: "acc", title: "Configurações", sub: "Tema, notação, afinação de referência", onClick: function () { OM.router.push("settings"); } }),
         ui.item({ icon: "download", iconCls: "acc", title: "Backup dos dados", sub: "Exportar ou restaurar", onClick: function () { OM.router.push("settings", { focus: "backup" }); } })));

@@ -5,7 +5,7 @@
 
   OM.screen("scales", function (p) {
     var root = p.root || "C", sid = p.scale || "major", inst = OM.inst.current();
-    if (!OM.inst.hasStrings(inst) && inst.kind !== "keys") inst = OM.inst.get("violao");
+    if (!OM.inst.hasStrings(inst) && inst.kind !== "keys") inst = OM.inst.pref(["string", "bowed", "keys"]);
     var label = "note", bpm = 90, stopPlay = null;
     var content = h("div.content");
     var bar = ui.topbar({ title: "Gerador de escalas", back: true });

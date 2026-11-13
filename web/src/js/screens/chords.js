@@ -4,17 +4,13 @@
   var h = OM.u.h, ui = OM.ui, T = OM.theory;
 
   function instPicker(inst, onChange) {
-    var b = ui.btn(inst.n, OM.inst.icon(inst), function () {
-      var opts = OM.inst.all().filter(function (i) { return i.kind === "string" || i.kind === "keys"; }).map(function (i) { return { v: i.id, label: i.n, sub: i.kind === "keys" ? "Teclado" : OM.inst.tuningOf(i).n }; });
-      ui.pick("Instrumento", opts, inst.id).then(function (v) { if (v) onChange(OM.inst.get(v)); });
-    }, "sm ghost");
-    return b;
+    return ui.instSwitch({ kinds: ["string", "keys"], current: inst, onChange: onChange });
   }
 
   /* ---------- catálogo ---------- */
   OM.screen("chords", function () {
     var inst = OM.inst.current();
-    if (inst.kind !== "string" && inst.kind !== "keys") inst = OM.inst.get("violao");
+    if (inst.kind !== "string" && inst.kind !== "keys") inst = OM.inst.pref(["string", "keys"]);
     var root = "C", cat = "all", q = "";
     var content = h("div.content");
     var bar = ui.topbar({ title: "Biblioteca de acordes", back: true });
@@ -26,7 +22,7 @@
     var keys = h("div.keyrow");
     T.ROOTS.forEach(function (r) { keys.appendChild(h("button" + (r === root ? ".on" : ""), { text: T.display(r), onclick: function () { root = r; [].forEach.call(keys.children, function (b) { b.classList.toggle("on", b.textContent === T.display(r)); }); draw(); } })); });
     var catChips = ui.chips(T.CHORD_CATS.map(function (c) { return { v: c.id, label: c.n }; }), cat, function (v) { cat = v; draw(); });
-    function drawInst() { OM.u.clear(instBox); instBox.appendChild(h("div.btnrow", instPicker(inst, function (i) { inst = i; drawInst(); grid.style.gridTemplateColumns = "repeat(auto-fill,minmax(" + (inst.kind === "keys" ? 150 : 100) + "px,1fr))"; draw(); }))); }
+    function drawInst() { OM.u.clear(instBox); instBox.appendChild(h("div", instPicker(inst, function (i) { inst = i; grid.style.gridTemplateColumns = "repeat(auto-fill,minmax(" + (inst.kind === "keys" ? 150 : 100) + "px,1fr))"; draw(); }))); }
     function cell(name, label) {
       var c = h("button.vc", { onclick: function () { OM.router.push("chord", { name: name, inst: inst.id }); } });
       c.appendChild(ui.chordView(name, inst, { size: inst.kind === "keys" ? 90 : 84, max: 1 }));
@@ -56,7 +52,7 @@
   /* ---------- detalhe do acorde ---------- */
   OM.screen("chord", function (p) {
     var inst = p.inst ? OM.inst.get(p.inst) : OM.inst.current();
-    if (inst.kind !== "string" && inst.kind !== "keys") inst = OM.inst.get("violao");
+    if (inst.kind !== "string" && inst.kind !== "keys") inst = OM.inst.pref(["string", "keys"]);
     var name = p.name, ch = T.parseChord(name);
     var content = h("div.content");
     var bar = ui.topbar({ title: name, sub: "Acorde", back: true });
@@ -65,7 +61,8 @@
       OM.u.clear(content);
       if (!ch) { content.appendChild(ui.empty("alert", "Acorde não reconhecido.")); return; }
       var fl = T.keyUsesFlats(ch.root) || ch.root.indexOf("b") > 0;
-      content.appendChild(h("div.btnrow", instPicker(inst, function (i) { inst = i; draw(); }), ui.btn("Ouvir", "sound", function () { ui.playChord(name, inst); }, "sm pri")));
+      content.appendChild(instPicker(inst, function (i) { inst = i; draw(); }));
+      content.appendChild(h("div.btnrow", { style: { marginTop: "8px" } }, ui.btn("Ouvir", "sound", function () { ui.playChord(name, inst); }, "sm pri")));
       content.appendChild(h("div.lbl", { text: "Notas e intervalos" }));
       content.appendChild(h("div.notes-row", ch.intervals.map(function (iv, i) {
         return h("span.notepill" + (i === 0 ? ".rt" : ""), { text: T.display(T.name(ch.rootPc + iv, fl)), onclick: function () { OM.synth.note(60 + T.mod12(ch.rootPc + iv - 0), inst); } }, h("small", { text: T.intervalLabel(iv, ch.intervals) }));
@@ -94,7 +91,7 @@
   /* ---------- gerador / identificador ---------- */
   OM.screen("chordgen", function () {
     var inst = OM.inst.current();
-    if (inst.kind !== "string" && inst.kind !== "keys") inst = OM.inst.get("violao");
+    if (inst.kind !== "string" && inst.kind !== "keys") inst = OM.inst.pref(["string", "keys"]);
     var root = "C", type = "", bass = "", mode = "build", picked = [];
     var content = h("div.content");
     var bar = ui.topbar({ title: "Gerador de acordes", back: true });

@@ -70,6 +70,7 @@
     content.appendChild(h("div.range", { style: { marginTop: "14px" } }, h("span", { html: OM.icon("sound"), style: { width: "20px", color: "var(--tx2)" } }), ui.range(0, 1, 0.05, vol, function (v) { vol = v; })));
     content.appendChild(h("div.btnrow", { style: { marginTop: "10px" } }, ui.btn("Salvar como meu", "plus", saveMine, "sm ghost"),
       ui.btn("Limpar", "trash", function () { Object.keys(cur.tracks).forEach(function (k) { cur.tracks[k] = ".".repeat(cur.steps); }); draw(); }, "sm ghost")));
+    content.appendChild(h("div.btnrow", { style: { marginTop: "10px" } }, ui.btn("Tocar com acordes e batida de violão", "pulse", function () { OM.router.push("batidas"); }, "sm")));
     content.appendChild(h("p.dim", { style: { fontSize: "12px", marginTop: "10px" }, text: "Toque nas células para editar: forte → fraco → vazio. Cada linha é um compasso; colunas sombreadas marcam os tempos." }));
     fillSel(); draw();
     return { el: el, destroy: stop, onHide: stop };
@@ -164,7 +165,7 @@
       }
       if (inst.custom) content.appendChild(h("div.btnrow", { style: { marginTop: "16px" } },
         ui.btn("Editar", "edit", function () { OM.router.push("custominst", { id: inst.id }); }, "sm"),
-        ui.btn("Excluir", "trash", function () { ui.confirm("Excluir “" + inst.n + "”?", "Excluir", true).then(function (ok) { if (ok) { OM.inst.removeCustom(inst.id); if (OM.store.settings().instrument === inst.id) OM.store.setSetting("instrument", "violao"); OM.router.back(); } }); }, "sm danger")));
+        ui.btn("Excluir", "trash", function () { ui.confirm("Excluir “" + inst.n + "”?", "Excluir", true).then(function (ok) { if (ok) { OM.inst.removeCustom(inst.id); if (OM.store.settings().instrument === inst.id) OM.store.setSetting("instrument", (OM.inst.mine()[0] || OM.inst.get("violao")).id); OM.router.back(); } }); }, "sm danger")));
       content.appendChild(h("div.lbl", { text: "Ferramentas" }));
       var tl = h("div.list");
       if (inst.kind !== "drums" && inst.kind !== "keys") tl.appendChild(ui.item({ icon: "tuner", iconCls: "acc", title: "Afinar " + inst.n, onClick: function () { OM.router.push("tuner", { inst: inst.id }); } }));

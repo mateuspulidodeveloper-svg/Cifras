@@ -91,7 +91,22 @@
     for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i];
     return LIST[0];
   }
-  function current() { return get(OM.store.settings().instrument); }
+  function find(id) { var a = all(); for (var i = 0; i < a.length; i++) if (a[i].id === id) return a[i]; return null; }
+  /* instrumentos que o usuário tem (escolhidos na primeira abertura ou em Perfil › Meus instrumentos) */
+  function mine() { return (OM.store.settings().myInst || []).map(find).filter(Boolean); }
+  function isSetup() { var s = OM.store.get("settings", {}); return Array.isArray(s.myInst) && s.myInst.length > 0; }
+  function setMine(ids, principal) {
+    OM.store.setSetting("myInst", ids.slice());
+    if (principal) OM.store.setSetting("instrument", principal);
+  }
+  function current() { return find(OM.store.settings().instrument) || mine()[0] || LIST[0]; }
+  /* primeiro instrumento do usuário que atende aos tipos pedidos (ex.: ["string","keys"]); senão, um padrão do tipo */
+  function pref(kinds) {
+    var c = [current()].concat(mine());
+    for (var i = 0; i < c.length; i++) if (kinds.indexOf(c[i].kind) >= 0) return c[i];
+    return get(kinds.indexOf("string") >= 0 ? "violao" : kinds.indexOf("keys") >= 0 ? "piano" : kinds.indexOf("bowed") >= 0 ? "violino" : "violao");
+  }
+  function setCurrent(id) { OM.store.setSetting("instrument", id); }
   /* afinação escolhida para um instrumento (lembrada por instrumento) */
   function tuningOf(inst) {
     if (!inst.tunings || !inst.tunings.length) return null;
@@ -122,6 +137,6 @@
     OM.store.update("customInst", [], function (a) { return a.filter(function (x) { return x.id !== id; }); });
   }
 
-  OM.inst = { LIST: LIST, GROUPS: GROUPS, all: all, get: get, current: current, tuningOf: tuningOf, setTuning: setTuning, tuningMidi: tuningMidi,
+  OM.inst = { LIST: LIST, GROUPS: GROUPS, all: all, get: get, find: find, mine: mine, isSetup: isSetup, setMine: setMine, pref: pref, setCurrent: setCurrent, current: current, tuningOf: tuningOf, setTuning: setTuning, tuningMidi: tuningMidi,
     hasStrings: hasStrings, isReentrant: isReentrant, chordView: chordView, icon: icon, custom: custom, saveCustom: saveCustom, removeCustom: removeCustom };
 })(window.OM);

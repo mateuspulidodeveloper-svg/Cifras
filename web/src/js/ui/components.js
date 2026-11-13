@@ -347,7 +347,46 @@
       h("span", { text: (song.title || "?").replace(/^(o|a|the|os|as)\s+/i, "").slice(0, 2) }), h("small", { text: song.key || "", style: { fontSize: "12px", opacity: .85 } }));
   }
 
-  OM.ui = { ibtn: ibtn, btn: btn, toast: toast, topbar: topbar, scrollShadow: scrollShadow, sheet: sheet, closeTopLayer: closeTopLayer, menu: menu,
+  /* seletor rápido de instrumento: só os instrumentos do usuário (Meus instrumentos) + "Outros".
+     o: {kinds: ["string","keys"] (opcional), current: inst, onChange(inst), global: true (troca o principal)} */
+  function instSwitch(o) {
+    var el = h("div.instsw");
+    function draw() {
+      OM.u.clear(el);
+      var cur = o.current || OM.inst.current();
+      var mine = OM.inst.mine().filter(function (i) { return !o.kinds || o.kinds.indexOf(i.kind) >= 0; });
+      if (mine.length && !mine.some(function (i) { return i.id === cur.id; })) mine.push(cur);
+      if (!mine.length) mine = [cur];
+      mine.forEach(function (i) {
+        var b = h("button.chip" + (i.id === cur.id ? ".on" : ""), { onclick: function () {
+          if (i.id === cur.id) return;
+          o.current = i;
+          if (o.global !== false && OM.inst.mine().some(function (x) { return x.id === i.id; })) OM.inst.setCurrent(i.id);
+          draw(); o.onChange && o.onChange(i);
+        } });
+        b.insertAdjacentHTML("beforeend", OM.icon(OM.inst.icon(i)));
+        b.appendChild(document.createTextNode(i.n));
+        el.appendChild(b);
+      });
+      var more = h("button.chip", { onclick: function () {
+        var opts = OM.inst.all().filter(function (i) { return !o.kinds || o.kinds.indexOf(i.kind) >= 0; }).map(function (i) { return { v: i.id, label: i.n, sub: OM.inst.tuningOf(i) ? OM.inst.tuningOf(i).n : null }; });
+        opts.push({ v: "__edit", label: "Editar meus instrumentos…" });
+        pick("Escolher instrumento", opts, cur.id).then(function (v) {
+          if (!v) return;
+          if (v === "__edit") { OM.router.push("myinst"); return; }
+          o.current = OM.inst.get(v); draw(); o.onChange && o.onChange(o.current);
+        });
+      } });
+      more.insertAdjacentHTML("beforeend", OM.icon("plus"));
+      more.appendChild(document.createTextNode("Outros"));
+      el.appendChild(more);
+    }
+    draw();
+    el.set = function (i) { o.current = i; draw(); };
+    return el;
+  }
+
+  OM.ui = { instSwitch: instSwitch, ibtn: ibtn, btn: btn, toast: toast, topbar: topbar, scrollShadow: scrollShadow, sheet: sheet, closeTopLayer: closeTopLayer, menu: menu,
     confirm: confirm, prompt: prompt, pick: pick, seg: seg, chips: chips, toggle: toggle, stepper: stepper, range: range, row: row, item: item,
     empty: empty, sec: sec, diff: diff, notice: notice, chordDiagram: chordDiagram, piano: piano, fretboard: fretboard, chordView: chordView,
     chordMidis: chordMidis, playChord: playChord, cover: cover, layers: function () { return layers.length; } };

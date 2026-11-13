@@ -25,7 +25,7 @@
   OM.screen("inicio", function () {
     var content = h("div.content");
     var brand = h("div.brand", h("span.logo", { html: OM.icon("note") }), h("b", { text: "O Músico" }));
-    var bar = ui.topbar({ brand: brand, actions: [ui.ibtn("learn", function () { OM.router.push("learn"); }, "Aprender"), ui.ibtn("settings", function () { OM.router.push("settings"); }, "Configurações")] });
+    var bar = ui.topbar({ brand: brand, actions: [ui.ibtn("user", function () { OM.router.push("perfil"); }, "Perfil")] });
     var el = h("section", bar, content);
     ui.scrollShadow(content, bar);
     var input = h("input", { type: "search", placeholder: "Buscar músicas, artistas, letras…", enterkeyhint: "search" });
@@ -56,49 +56,40 @@
       var streak = L.streak();
       main.appendChild(h("div.hello", h("h1", { text: greet + (st.name ? ", " + st.name.split(" ")[0] : "") }),
         h("p", { text: streak ? "Você pratica há " + streak + (streak === 1 ? " dia seguido" : " dias seguidos") + ". Continue assim!" : "O que vamos tocar hoje?" })));
-      var tile = function (icon, t, sub, fn) { return h("button.tile", { onclick: fn }, h("span.ti", { html: OM.icon(icon) }), h("div", h("b", { text: t }), h("small", { text: sub }))); };
-      var g = h("div.grid2", { style: { marginTop: "14px" } },
-        tile("tuner", "Afinador", OM.inst.hasStrings(inst) ? inst.n : "Cromático", function () { OM.router.push("tuner"); }),
-        tile("metro", "Metrônomo", OM.metro.S.bpm + " BPM · " + OM.metro.S.num + "/" + OM.metro.S.den, function () { OM.router.push("metronome"); }),
-        tile("library", "Biblioteca", L.favs().length + " favoritas · " + L.lists().length + " repertórios", function () { OM.router.tab("biblioteca"); }),
-        tile(OM.inst.icon(inst), "Instrumentos", inst.n, function () { OM.router.push("instruments"); }));
-      main.appendChild(g);
+      main.appendChild(ui.instSwitch({ onChange: render }));
+      /* aprender em destaque */
       var nx = OM.lessons.nextLesson();
-      main.appendChild(h("button.card", { style: { display: "flex", alignItems: "center", gap: "14px", width: "100%", textAlign: "left", marginTop: "10px", background: "var(--acc-soft)", borderColor: "var(--acc)" },
-        onclick: function () { if (nx) OM.router.push("lesson", { course: nx.course.id, id: nx.lesson.id }); else OM.router.push("learn"); } },
-        h("span.ti", { html: OM.icon("learn"), style: { width: "42px", height: "42px", borderRadius: "12px", display: "grid", placeItems: "center", background: "var(--acc)", color: "var(--acc-ink)", flex: "none" } }),
-        h("div", { style: { flex: 1, minWidth: 0 } }, h("b", { text: nx ? "Continue aprendendo" : "Aprender música", style: { display: "block" } }),
-          h("small.muted", { text: nx ? nx.course.n + " · " + nx.lesson.n : "Cursos concluídos! Explore exercícios, guias e o mapa do braço." })),
-        h("span", { html: OM.icon("chev"), style: { width: "20px", color: "var(--acc)" } })));
-      main.appendChild(h("div.chips", { style: { marginTop: "10px" } },
-        h("button.chip", { text: "Cursos", onclick: function () { OM.router.push("learn"); } }),
-        h("button.chip", { text: "Instrumentos", onclick: function () { OM.router.push("instguides"); } }),
-        h("button.chip", { text: "Mapa do braço", onclick: function () { OM.router.push("fretmap"); } }),
-        h("button.chip", { text: "Acordes", onclick: function () { OM.router.push("chords"); } }),
-        h("button.chip", { text: "Importar JSON", onclick: function () { OM.router.push("transfer"); } })));
+      main.appendChild(h("button.card.hero", { onclick: function () { if (nx) OM.router.push("lesson", { course: nx.course.id, id: nx.lesson.id }); else OM.router.tab("aprender"); } },
+        h("span.hi", { html: OM.icon(nx ? "play" : "learn") }),
+        h("div", { style: { flex: 1, minWidth: 0 } }, h("small", { text: nx ? "Continue aprendendo · " + nx.course.n : "Aprender" }), h("b", { text: nx ? nx.lesson.n : "Exercícios, guias e mapa do braço" })),
+        h("span", { html: OM.icon("chev"), style: { width: "20px" } })));
+      /* atalhos essenciais */
+      var q = function (icon, t, fn) { return h("button.qa", { onclick: fn }, h("span", { html: OM.icon(icon) }), h("small", { text: t })); };
+      main.appendChild(h("div.qrow",
+        q("tuner", "Afinador", function () { OM.router.push("tuner"); }),
+        q("metro", "Metrônomo", function () { OM.router.push("metronome"); }),
+        q("pulse", "Batidas", function () { OM.router.push("batidas"); }),
+        q("grid", "Acordes", function () { OM.router.push("chords"); })));
 
       var rec = L.recent().slice(0, 10);
       if (rec.length) {
-        main.appendChild(ui.sec("Recentes"));
+        main.appendChild(ui.sec("Continue tocando"));
         main.appendChild(h("div.hscroll", rec.map(songCard)));
       }
       var favs = L.favs().map(L.get).filter(Boolean);
-      main.appendChild(ui.sec("Favoritas", favs.length > 4 ? "Ver todas" : null, function () { OM.router.push("songlist", { kind: "fav" }); }));
-      if (favs.length) { var fl = h("div.list"); favs.slice(0, 4).forEach(function (s) { fl.appendChild(songItem(s)); }); main.appendChild(fl); }
-      else main.appendChild(h("div.card", h("p.muted", { text: "Toque no coração de uma cifra para guardá-la aqui." })));
-
-      main.appendChild(ui.sec("Sugestões para você", "Ver acervo", function () { OM.router.tab("cifras"); }));
+      if (favs.length) {
+        main.appendChild(ui.sec("Favoritas", "Ver todas", function () { OM.router.push("songlist", { kind: "fav" }); }));
+        main.appendChild(h("div.hscroll", favs.slice(0, 10).map(songCard)));
+      }
+      main.appendChild(ui.sec("Sugestões para você", "Ver cifras", function () { OM.router.tab("cifras"); }));
       main.appendChild(h("div.hscroll", L.suggestions(8).map(songCard)));
 
-      var hist = L.history().slice(0, 4);
-      main.appendChild(ui.sec("Últimas práticas", hist.length ? "Histórico" : null, function () { OM.router.push("history"); }));
+      var hist = L.history().slice(0, 3);
       if (hist.length) {
+        main.appendChild(ui.sec("Últimas práticas", "Histórico", function () { OM.router.push("history"); }));
         var hl = h("div.list");
         hist.forEach(function (e) { hl.appendChild(ui.item({ icon: histIcon(e), title: e.title, sub: histText(e), onClick: function () { openHist(e); } })); });
         main.appendChild(hl);
-      } else {
-        main.appendChild(h("div.card", h("p.muted", { text: "Suas sessões de prática (cifras, exercícios e ferramentas) aparecerão aqui." }),
-          h("div.btnrow", { style: { marginTop: "12px" } }, ui.btn("Começar a aprender", "learn", function () { OM.router.push("learn"); }, "sm"))));
       }
     }
     content.appendChild(h("div.search", { html: OM.icon("search") }, input, clr));

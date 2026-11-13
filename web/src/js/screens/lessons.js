@@ -14,8 +14,8 @@
     return null;
   }
   OM.lessons = { nextLesson: nextLesson, courseProgress: courseProgress };
-  function chordInst() { var i = OM.inst.current(); return i.kind === "string" || i.kind === "keys" ? i : OM.inst.get(i.kind === "bowed" ? "violao" : "piano"); }
-  function stringInst() { var i = OM.inst.current(); return OM.inst.hasStrings(i) ? i : OM.inst.get("violao"); }
+  function chordInst() { return OM.inst.pref(["string", "keys"]); }
+  function stringInst() { return OM.inst.pref(["string", "bowed"]); }
 
   /* ---------- curso ---------- */
   OM.screen("course", function (p) {
@@ -194,7 +194,7 @@
   /* ---------- mapa do braço / teclado ---------- */
   OM.screen("fretmap", function (p) {
     var inst = p.inst ? OM.inst.get(p.inst) : OM.inst.current();
-    if (!OM.inst.hasStrings(inst) && inst.kind !== "keys") inst = OM.inst.get("violao");
+    if (!OM.inst.hasStrings(inst) && inst.kind !== "keys") inst = OM.inst.pref(["string", "bowed", "keys"]);
     var mode = "all", root = "C", scaleId = "major", chordT = "", sel = null;
     var content = h("div.content");
     var bar = ui.topbar({ title: "Mapa do braço", back: true });
@@ -232,7 +232,8 @@
     function draw() {
       OM.u.clear(content);
       var isKeys = inst.kind === "keys";
-      content.appendChild(h("div.btnrow", ui.btn(inst.n, OM.inst.icon(inst), pickInst, "sm ghost"), !isKeys ? ui.btn(OM.inst.tuningOf(inst).n, "swap", pickTuning, "sm ghost") : null));
+      content.appendChild(ui.instSwitch({ kinds: ["string", "bowed", "keys"], current: inst, onChange: function (i) { inst = i; sel = null; draw(); } }));
+      if (!isKeys) content.appendChild(h("div.btnrow", { style: { marginTop: "6px" } }, ui.btn(OM.inst.tuningOf(inst).n, "swap", pickTuning, "sm ghost")));
       content.appendChild(h("div", { style: { marginTop: "12px" } }, ui.chips(MODES, mode, function (v) { mode = v; draw(); })));
       if (mode !== "all" && mode !== "nat") {
         var kr = h("div.keyrow", { style: { marginTop: "10px" } });

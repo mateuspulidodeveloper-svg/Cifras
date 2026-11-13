@@ -63,6 +63,32 @@
       [-10, -5, +5, +10].map(function (d) { return h("button.chip", { text: (d > 0 ? "+" : "") + d, onclick: function () { MT.set("bpm", M.bpm + d); } }); })));
     content.appendChild(tapBtn);
 
+    /* predefinições salvas (ex.: "Música X", "Aquecimento 60") */
+    var presetBox = h("div");
+    function drawPresets() {
+      OM.u.clear(presetBox);
+      var pr = OM.store.get("metroPresets", []);
+      presetBox.appendChild(h("div.sec", h("h2", { text: "Predefinições", style: { fontSize: "14px" } }), h("button.lnk", { text: "+ Salvar atual", onclick: function () {
+        ui.prompt("Salvar predefinição", "Nome (ex.: Aquecimento, nome da música)", M.bpm + " BPM " + M.num + "/" + M.den).then(function (n) {
+          if (!n) return;
+          OM.store.update("metroPresets", [], function (a) { a.unshift({ n: n, bpm: M.bpm, num: M.num, den: M.den, sub: M.sub, sound: M.sound, accents: MT.accents().slice() }); return a.slice(0, 20); });
+          drawPresets();
+        });
+      } })));
+      if (!pr.length) { presetBox.appendChild(h("p.dim", { style: { fontSize: "12.5px" }, text: "Salve combinações de andamento, compasso e som para trocar com um toque." })); return; }
+      presetBox.appendChild(h("div.chips.wrap", pr.map(function (x, i) {
+        var c = h("button.chip", { text: x.n + " · " + x.bpm, onclick: function () {
+          MT.set("num", x.num); MT.set("den", x.den); MT.set("bpm", x.bpm); MT.set("sub", x.sub); MT.set("sound", x.sound);
+          if (x.accents && x.accents.length === x.num) { M.accents = x.accents.slice(); MT.set("accents", M.accents); }
+          drawBeats(); sync(); ui.toast("“" + x.n + "” carregada");
+        } });
+        c.addEventListener("contextmenu", function (e) { e.preventDefault(); ui.confirm("Excluir a predefinição “" + x.n + "”?", "Excluir", true).then(function (ok) { if (ok) { OM.store.update("metroPresets", [], function (a) { a.splice(i, 1); }); drawPresets(); } }); });
+        return c;
+      })));
+      presetBox.appendChild(h("p.dim", { style: { fontSize: "11.5px", marginTop: "4px" }, text: "Toque e segure para excluir." }));
+    }
+    drawPresets();
+    content.appendChild(presetBox);
     content.appendChild(h("div.lbl", { text: "Compasso" }));
     var numSt = ui.stepper(M.num, 1, 12, 1, function (v) { return v; }, function (v) { MT.set("num", v); });
     var denSeg = ui.seg([{ v: 2, label: "/2" }, { v: 4, label: "/4" }, { v: 8, label: "/8" }], M.den, function (v) { MT.set("den", v); sync(); });

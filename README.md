@@ -41,6 +41,18 @@ Para testar no navegador, sirva `dist/` por HTTP (`python3 -m http.server --dire
 
 ## Funcionalidades
 
+Navegação inferior: **Início · Cifras · Aprender · Ferramentas · Biblioteca**. O Perfil fica no ícone do topo do Início.
+Na primeira abertura, a pessoa escolhe **os instrumentos que tem** e o principal. Não há instrumento pré-definido.
+Afinador, cifras, acordes, mapa do braço e aulas mostram um seletor rápido só com esses instrumentos.
+
+- **Batidas:** 21 batidas e dedilhados (pop, rock, balada, valsa, funk, shuffle, reggae, sertanejo, samba, pagode,
+  bossa nova, baião, xote, arpejos, travis), visualizadas passo a passo (↓ ↑ abafada, polegar, dedos) e tocadas sobre
+  uma progressão (I–V–vi–IV, blues de 12 compassos, ii–V–I… ou sua sequência), em qualquer tom, com bateria e clique
+  opcionais. Também acompanham o **modo prática** da cifra.
+- **Cifra enquanto toca:** pinça com dois dedos para o tamanho da letra, **karaokê** (a letra muda de cor no ritmo
+  escolhido; toque numa palavra para pular), acordes simplificados, modo só letra, painel de ajustes único, e no modo
+  apresentação toque embaixo/em cima para virar a página.
+
 - **Início:** busca (título, artista, gênero e trechos da letra), atalhos (afinador, metrônomo, biblioteca,
   instrumentos), recentes, favoritas, sugestões e últimas práticas.
 - **Cifras:** acervo com filtros (gênero, nível, status), editor e importação de arquivos `.txt` / ChordPro.
@@ -53,7 +65,7 @@ Para testar no navegador, sirva `dist/` por HTTP (`python3 -m http.server --dire
   mediana). Nota, Hz, cents, ponteiro e confirmação de corda afinada. Modos cromático e por instrumento,
   com detecção automática da corda, afinações alternativas, Lá de referência ajustável (415–466 Hz)
   e tom de referência por corda. Instrumentos de sopro mostram a nota escrita (Si♭, Mi♭, Fá).
-- **Metrônomo:** 20–300 BPM, compasso configurável, acento por tempo (acento, normal ou mudo), subdivisões
+- **Metrônomo:** predefinições salvas, 20–300 BPM, compasso configurável, acento por tempo (acento, normal ou mudo), subdivisões
   (colcheia, tercina, semicolcheia, swing, pontuada), 6 sons, volumes, pulsação visual, tap tempo
   e treino de velocidade. Agendamento no relógio do Web Audio, para manter o tempo preciso.
 - **Acordes:** catálogo por tônica e categoria (maiores, menores, com sétima, diminutos, aumentados,

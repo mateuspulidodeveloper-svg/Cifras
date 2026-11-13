@@ -4,7 +4,7 @@
   var h = OM.u.h, ui = OM.ui, T = OM.theory, u = OM.u;
   var NAT = ["C", "D", "E", "F", "G", "A", "B"];
 
-  function stringInst() { var i = OM.inst.current(); return i.kind === "string" ? i : OM.inst.get("violao"); }
+  function stringInst() { return OM.inst.pref(["string"]); }
   function tm(inst) { return OM.inst.tuningMidi(OM.inst.tuningOf(inst)); }
   function opts(correct, pool, n) {
     var o = [correct], p = u.shuffle(pool.filter(function (x) { return x !== correct; }));
@@ -27,7 +27,7 @@
         { n: "Tensões e suspensos", set: ["Dsus4", "Asus2", "C(9)", "Em7(11)", "A7/4", "Bm7(b5)", "G6"] }
       ],
       gen: function (lv) {
-        var inst = OM.inst.current(); if (inst.kind !== "string" && inst.kind !== "keys") inst = OM.inst.get("violao");
+        var inst = OM.inst.pref(["string", "keys"]);
         var set = this.levels[lv].set, c = u.pick(set), pool = set.concat(["C", "G", "Am", "Em", "D7", "F", "E"]);
         if (Math.random() < 0.5) {
           var o = opts(c, pool);
@@ -161,50 +161,59 @@
   }
 
   /* ---------- hub ---------- */
-  OM.screen("learn", function () {
+  function learnHub(isRoot) {
     var content = h("div.content");
-    var bar = ui.topbar({ title: "Aprender", back: true });
+    var bar = ui.topbar({ title: "Aprender", back: !isRoot });
     var el = h("section", bar, content);
     ui.scrollShadow(content, bar);
+    var group = 0;
+    var GROUPS = [["Teoria", ["chords", "fretnotes", "staff", "scales"]], ["Prática", ["playnote", "rhythm", "changes"]], ["Ouvido", ["intervals", "chordear", "earnotes"]]];
+    function tile(icon, t, sub, fn, pct) {
+      var b = h("button.tile", { onclick: fn }, h("span.ti", { html: OM.icon(icon) }), h("div", { style: { width: "100%" } }, h("b", { text: t }), h("small", { text: sub })));
+      if (pct != null) b.lastChild.appendChild(h("div.prog", { style: { marginTop: "8px" } }, h("i", { style: { width: pct + "%" } })));
+      return b;
+    }
     function draw() {
       OM.u.clear(content);
-      var ex = OM.lib.history("exercise");
-      content.appendChild(h("div.grid3", { style: { margin: "4px 0 6px" } },
-        h("div.card.stat", h("b", { text: totalXp() }), h("span", { text: "pontos (XP)" })),
-        h("div.card.stat", h("b", { text: ex.length }), h("span", { text: "sessões" })),
-        h("div.card.stat", h("b", { text: OM.lib.streak() }), h("span", { text: "dias seguidos" }))));
-      content.appendChild(ui.sec("Cursos e guias"));
-      var cl = h("div.list");
-      OM.COURSES.forEach(function (c) {
+      var inst = OM.inst.current();
+      content.appendChild(h("div.lbl", { text: "Estudando com", style: { marginTop: "4px" } }));
+      content.appendChild(ui.instSwitch({ onChange: draw }));
+      var nx = OM.lessons.nextLesson();
+      if (nx) content.appendChild(h("button.card.hero", { onclick: function () { OM.router.push("lesson", { course: nx.course.id, id: nx.lesson.id }); } },
+        h("span.hi", { html: OM.icon("play") }), h("div", { style: { flex: 1, minWidth: 0 } }, h("small", { text: "Próxima lição · " + nx.course.n }), h("b", { text: nx.lesson.n })),
+        h("span", { html: OM.icon("chev"), style: { width: "20px" } })));
+      content.appendChild(ui.sec("Cursos"));
+      content.appendChild(h("div.grid2", OM.COURSES.map(function (c) {
         var n = OM.lessons.courseProgress(c);
-        var it = ui.item({ icon: c.icon, iconCls: "acc", title: c.n, sub: n + " de " + c.lessons.length + " lições · " + c.d, onClick: function () { OM.router.push("course", { id: c.id }); } });
-        it.querySelector(".tx").appendChild(h("div.prog", { style: { marginTop: "6px" } }, h("i", { style: { width: Math.round(n / c.lessons.length * 100) + "%" } })));
-        cl.appendChild(it);
-      });
-      cl.appendChild(ui.item({ icon: OM.inst.icon(OM.inst.current()), iconCls: "acc", title: "Conheça os instrumentos", sub: "Partes, afinação, primeiros acordes e dicas", onClick: function () { OM.router.push("instguides"); } }));
-      cl.appendChild(ui.item({ icon: "guitar", iconCls: "acc", title: "Mapa do braço e do teclado", sub: "Notas, intervalos, escalas e acordes em todo o instrumento", onClick: function () { OM.router.push("fretmap"); } }));
-      content.appendChild(cl);
+        return tile(c.icon, c.n, n + " de " + c.lessons.length + " lições", function () { OM.router.push("course", { id: c.id }); }, Math.round(n / c.lessons.length * 100));
+      })));
+      content.appendChild(ui.sec("Seu instrumento: " + inst.n));
+      content.appendChild(h("div.grid2",
+        tile(OM.inst.icon(inst), "Guia do instrumento", "Partes, afinação e dicas", function () { OM.router.push("instguide", { id: inst.id }); }),
+        inst.kind === "keys" ? tile("piano", "Mapa do teclado", "Notas, escalas e acordes", function () { OM.router.push("fretmap"); })
+          : inst.kind === "drums" ? tile("drum", "Grooves", "Ritmos para praticar", function () { OM.router.push("grooves"); })
+          : tile("guitar", "Mapa do braço", "Notas, escalas e acordes", function () { OM.router.push("fretmap"); }),
+        tile("grid", "Acordes", "Diagramas e posições", function () { OM.router.push("chords"); }),
+        tile("pulse", "Batidas", "Ritmos de acompanhamento", function () { OM.router.push("batidas"); })));
+      content.appendChild(h("div.list", { style: { marginTop: "10px" } }, ui.item({ icon: "book", title: "Todos os instrumentos", sub: "Guias de cordas, teclas, sopros, bateria e voz", onClick: function () { OM.router.push("instguides"); } })));
       content.appendChild(ui.sec("Exercícios"));
-      [["Teoria e leitura", ["chords", "fretnotes", "staff", "scales"]], ["Prática com o instrumento", ["playnote", "rhythm", "changes"]], ["Percepção musical", ["intervals", "chordear", "earnotes"]]].forEach(function (grp) {
-        content.appendChild(ui.sec(grp[0]));
-        var l = h("div.list");
-        grp[1].forEach(function (id) {
-          var x = OM.EX.get(id), pr = progress(id), done = Object.keys(pr.best).filter(function (k) { return pr.best[k] >= 80; }).length;
-          var it = ui.item({ icon: x.icon, iconCls: "acc", title: x.n, sub: "Nível " + (pr.unlocked + 1) + "/" + x.levels.length + " · " + x.levels[pr.unlocked].n, onClick: function () { OM.router.push("exercise", { id: id }); } });
-          it.querySelector(".tx").appendChild(h("div.prog", { style: { marginTop: "6px" } }, h("i", { style: { width: Math.round(done / x.levels.length * 100) + "%" } })));
-          l.appendChild(it);
-        });
-        content.appendChild(l);
+      content.appendChild(ui.seg(GROUPS.map(function (g, i) { return { v: i, label: g[0] }; }), group, function (v) { group = v; draw(); content.querySelector(".exlist").scrollIntoView({ block: "nearest" }); }));
+      var l = h("div.list.exlist", { style: { marginTop: "10px" } });
+      GROUPS[group][1].forEach(function (id) {
+        var x = OM.EX.get(id), pr = progress(id), done = Object.keys(pr.best).filter(function (k) { return pr.best[k] >= (x.changes ? x.levels[k].goal : 80); }).length;
+        var it = ui.item({ icon: x.icon, iconCls: "acc", title: x.n, sub: "Nível " + (pr.unlocked + 1) + "/" + x.levels.length + " · " + x.levels[pr.unlocked].n, onClick: function () { OM.router.push("exercise", { id: id }); } });
+        it.querySelector(".tx").appendChild(h("div.prog", { style: { marginTop: "6px" } }, h("i", { style: { width: Math.round(done / x.levels.length * 100) + "%" } })));
+        l.appendChild(it);
       });
-      if (ex.length) {
-        content.appendChild(ui.sec("Últimos exercícios", "Histórico", function () { OM.router.push("history"); }));
-        var hl = h("div.list");
-        ex.slice(0, 5).forEach(function (e) { hl.appendChild(ui.item({ icon: "learn", title: e.title, sub: OM.homeHelpers.histText(e), onClick: function () { OM.router.push("exercise", { id: e.id }); } })); });
-        content.appendChild(hl);
-      }
+      content.appendChild(l);
+      var exh = OM.lib.history("exercise");
+      content.appendChild(h("button", { style: { display: "block", width: "100%", textAlign: "center", padding: "16px 0 4px", fontSize: "13px", color: "var(--tx2)" }, onclick: function () { OM.router.push("history"); } },
+        totalXp() + " XP · " + exh.length + " sessões · " + OM.lib.streak() + " dias seguidos — ver histórico"));
     }
     return { el: el, onShow: draw };
-  });
+  }
+  OM.screen("learn", function () { return learnHub(false); });
+  OM.screen("aprender", function () { return learnHub(true); });
 
   /* ---------- tela de exercício ---------- */
   OM.screen("exercise", function (p) {
@@ -371,7 +380,7 @@
 
     /* mudanças de acordes: 1 minuto contando trocas */
     function changes() {
-      var L = ex.levels[lv], pair = L.pairs[0], inst = OM.inst.current(); if (inst.kind !== "string" && inst.kind !== "keys") inst = OM.inst.get("violao");
+      var L = ex.levels[lv], pair = L.pairs[0], inst = OM.inst.pref(["string", "keys"]);
       OM.u.clear(content);
       var pairBox = h("div");
       function drawPair() {

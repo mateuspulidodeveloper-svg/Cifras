@@ -208,3 +208,5 @@ input[type=range]::-moz-range-thumb{width:22px;height:22px;border:0;border-radiu
 .notice.err svg{color:var(--bad)}
 .fretboard .fb-n.q{fill:var(--acc);stroke:var(--tx);stroke-width:2}
 .chip.on{pointer-events:auto}
+.instsw{display:flex;gap:8px;overflow-x:auto;padding:2px 0 4px;scrollbar-width:none}
+.instsw::-webkit-scrollbar{display:none}

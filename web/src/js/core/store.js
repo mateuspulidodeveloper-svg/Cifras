@@ -28,7 +28,7 @@
   }
 
   var DEFAULTS = {
-    name: "", instrument: "violao", notation: "letters", a4: 440, theme: "dark", accent: "orange",
+    name: "", instrument: "", myInst: null, notation: "letters", a4: 440, theme: "dark", accent: "orange",
     fontSize: 16, keepAwake: true, leftHanded: false, showDiagrams: true
   };
   function settings() { return Object.assign({}, DEFAULTS, get("settings", {})); }
@@ -68,7 +68,7 @@
   };
 
   /* ---------- backup ---------- */
-  var BACKUP_KEYS = ["settings", "userSongs", "edits", "songPrefs", "favorites", "lists", "status", "notes", "history", "recent", "ex", "customInst", "practiceDays", "drumUser", "tuningSel", "metro", "lessons"];
+  var BACKUP_KEYS = ["settings", "userSongs", "edits", "songPrefs", "favorites", "lists", "status", "notes", "history", "recent", "ex", "customInst", "practiceDays", "drumUser", "tuningSel", "metro", "lessons", "metroPresets", "strumUser"];
   function exportData() {
     var o = { app: "O Músico", version: 1, date: new Date().toISOString(), data: {} };
     BACKUP_KEYS.forEach(function (k) { var v = get(k, undefined); if (v !== undefined) o.data[k] = v; });

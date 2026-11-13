@@ -205,3 +205,47 @@ audio{width:100%;height:40px;margin-top:8px}
 .recpill button{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--bad);color:#fff}
 .recpill button svg{width:14px;height:14px}
 @keyframes blink{50%{opacity:.25}}
+
+/* batidas */
+.bt-stage{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:var(--r3);background:var(--s1);border:1px solid var(--line);margin:6px 0 12px}
+.bt-cur{font-size:44px;font-weight:800;color:var(--chord);line-height:1.05;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bt-next{font-size:13px;color:var(--tx2);margin-top:2px;min-height:18px}
+.strum{display:grid;gap:4px}
+.strum .st{display:flex;flex-direction:column;align-items:center;justify-content:center;height:62px;border-radius:10px;background:var(--s2);border:1px solid var(--line);transition:background .05s,transform .05s}
+.strum .st b{font-size:24px;font-weight:800;line-height:1;color:var(--tx)}
+.strum .st.light b{font-size:16px;color:var(--tx2)}
+.strum .st.bass b{font-size:17px;color:var(--chord)}
+.strum .st.rest{background:transparent}
+.strum .st small{font-size:10px;color:var(--tx3);font-weight:700;margin-top:4px}
+.strum .st.on{background:var(--acc);border-color:var(--acc);transform:scale(1.06)}
+.strum .st.on b,.strum .st.on small{color:var(--acc-ink)}
+.chordstrip .cdiag.cur{outline:2px solid var(--acc);outline-offset:4px;border-radius:8px}
+
+/* cifra: só letra, karaokê */
+.sheetmusic.nochords .seg-c .c{display:none}
+.sheetmusic.nochords .sl.chordonly{display:none}
+.sheetmusic.karaoke .seg-c .l{transition:color .15s,background .15s;border-radius:4px;cursor:pointer}
+.sheetmusic.karaoke .seg-c .l.k-done{color:var(--acc)}
+.sheetmusic.karaoke .seg-c .l.k-cur{color:var(--acc-ink);background:var(--acc)}
+.sheetmusic.karaoke .sl{opacity:.92}
+.karactl{left:12px;right:12px;justify-content:space-between}
+
+.card.hero{display:flex;align-items:center;gap:14px;width:100%;text-align:left;margin-top:12px;background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}
+.card.hero .hi{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:rgba(0,0,0,.18);flex:none}
+.card.hero .hi svg{width:20px;height:20px}
+.card.hero small{display:block;font-size:12px;opacity:.8;font-weight:600}
+.card.hero b{display:block;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card.hero svg{color:inherit}
+.tile .prog{background:var(--s3)}
+
+.qrow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+.qa{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px;border-radius:var(--r2);background:var(--s1);border:1px solid var(--line);transition:transform .1s}
+.qa:active{transform:scale(.96)}
+.qa span{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--acc-soft);color:var(--acc)}
+.qa span svg{width:21px;height:21px}
+.qa small{font-size:12px;font-weight:650;color:var(--tx)}
+.hello{padding:8px 0 10px}
+.qa.big{padding:16px 4px}
+.qa.big span{width:48px;height:48px;border-radius:14px}
+.qa.big span svg{width:24px;height:24px}
+.qa.big small{font-size:13px}

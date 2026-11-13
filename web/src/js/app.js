@@ -34,6 +34,7 @@
     OM.router.init(app);
     metPill(app);
     OM.router.tab("inicio");
+    if (!OM.inst.isSetup()) OM.router.push("welcome");
     /* botão Voltar do Android chama App.voltar() */
     window.App = {
       voltar: function () { if (!OM.router.back()) OM.bridge.exit(); },

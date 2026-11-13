@@ -17,6 +17,7 @@
 
   OM.screen("tuner", function (p) {
     var inst = p.inst ? OM.inst.get(p.inst) : OM.inst.current();
+    if (inst.kind === "drums") inst = OM.inst.pref(["string", "bowed", "wind", "voice"]);
     var mode = OM.inst.hasStrings(inst) ? "inst" : "chrom";
     var content = h("div.content");
     var bar = ui.topbar({ title: "Afinador", back: true, actions: [ui.ibtn("settings", settings, "Ajustes")] });
@@ -34,9 +35,10 @@
       if (OM.inst.hasStrings(inst)) opts.push({ v: "inst", label: inst.n });
       modeEl.appendChild(ui.seg(opts, mode, function (v) { mode = v; target = -1; drawStrings(); setRange(); }));
       OM.u.clear(tuneBtn);
-      tuneBtn.appendChild(h("div.btnrow", { style: { marginTop: "10px" } },
-        ui.btn(inst.n, OM.inst.icon(inst), pickInst, "sm ghost"),
-        tuning() && mode === "inst" ? ui.btn(tuning().n, "swap", pickTuning, "sm ghost") : null));
+      tuneBtn.appendChild(h("div", { style: { marginTop: "10px" } }, ui.instSwitch({ kinds: ["string", "bowed", "wind", "keys", "voice"], current: inst, onChange: function (i) {
+        inst = i; mode = OM.inst.hasStrings(inst) ? "inst" : "chrom"; target = -1; done = {}; drawMode(); drawStrings(); setRange();
+      } })));
+      if (tuning() && mode === "inst") tuneBtn.appendChild(h("div.btnrow", { style: { marginTop: "6px" } }, ui.btn(tuning().n, "swap", pickTuning, "sm ghost")));
     }
     function pickInst() {
       var opts = OM.inst.all().filter(function (i) { return i.kind !== "drums"; }).map(function (i) { return { v: i.id, label: i.n, sub: OM.inst.hasStrings(i) ? OM.inst.tuningOf(i).n : (i.kind === "wind" ? "Cromático com transposição" : "Cromático") }; });
